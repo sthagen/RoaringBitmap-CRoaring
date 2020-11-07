@@ -157,13 +157,15 @@ void array_run_container_inplace_union(const array_container_t *src_1,
     }
 }
 
-bool array_array_container_union(const array_container_t *src_1,
-                                 const array_container_t *src_2, void **dst) {
+bool array_array_container_union(
+    const array_container_t *src_1, const array_container_t *src_2,
+    container_t **dst
+){
     int totalCardinality = src_1->cardinality + src_2->cardinality;
     if (totalCardinality <= DEFAULT_MAX_SIZE) {
         *dst = array_container_create_given_capacity(totalCardinality);
         if (*dst != NULL) {
-            array_container_union(src_1, src_2, (array_container_t *)*dst);
+            array_container_union(src_1, src_2, CAST_array(*dst));
         } else {
             return true; // otherwise failure won't be caught
         }
@@ -172,7 +174,7 @@ bool array_array_container_union(const array_container_t *src_1,
     *dst = bitset_container_create();
     bool returnval = true;  // expect a bitset
     if (*dst != NULL) {
-        bitset_container_t *ourbitset = (bitset_container_t *)*dst;
+        bitset_container_t *ourbitset = CAST_bitset(*dst);
         bitset_set_list(ourbitset->array, src_1->array, src_1->cardinality);
         ourbitset->cardinality = (int32_t)bitset_set_list_withcard(
             ourbitset->array, src_1->cardinality, src_2->array,
@@ -187,15 +189,17 @@ bool array_array_container_union(const array_container_t *src_1,
     return returnval;
 }
 
-bool array_array_container_inplace_union(array_container_t *src_1,
-                                 const array_container_t *src_2, void **dst) {
+bool array_array_container_inplace_union(
+    array_container_t *src_1, const array_container_t *src_2,
+    container_t **dst
+){
     int totalCardinality = src_1->cardinality + src_2->cardinality;
     *dst = NULL;
     if (totalCardinality <= DEFAULT_MAX_SIZE) {
         if(src_1->capacity < totalCardinality) {
           *dst = array_container_create_given_capacity(2  * totalCardinality); // be purposefully generous
           if (*dst != NULL) {
-              array_container_union(src_1, src_2, (array_container_t *)*dst);
+              array_container_union(src_1, src_2, CAST_array(*dst));
           } else {
               return true; // otherwise failure won't be caught
           }
@@ -210,7 +214,7 @@ bool array_array_container_inplace_union(array_container_t *src_1,
     *dst = bitset_container_create();
     bool returnval = true;  // expect a bitset
     if (*dst != NULL) {
-        bitset_container_t *ourbitset = (bitset_container_t *)*dst;
+        bitset_container_t *ourbitset = CAST_bitset(*dst);
         bitset_set_list(ourbitset->array, src_1->array, src_1->cardinality);
         ourbitset->cardinality = (int32_t)bitset_set_list_withcard(
             ourbitset->array, src_1->cardinality, src_2->array,
@@ -233,14 +237,15 @@ bool array_array_container_inplace_union(array_container_t *src_1,
 }
 
 
-bool array_array_container_lazy_union(const array_container_t *src_1,
-                                      const array_container_t *src_2,
-                                      void **dst) {
+bool array_array_container_lazy_union(
+    const array_container_t *src_1, const array_container_t *src_2,
+    container_t **dst
+){
     int totalCardinality = src_1->cardinality + src_2->cardinality;
     if (totalCardinality <= ARRAY_LAZY_LOWERBOUND) {
         *dst = array_container_create_given_capacity(totalCardinality);
         if (*dst != NULL) {
-            array_container_union(src_1, src_2, (array_container_t *)*dst);
+            array_container_union(src_1, src_2, CAST_array(*dst));
         } else {
               return true; // otherwise failure won't be caught
         }
@@ -249,7 +254,7 @@ bool array_array_container_lazy_union(const array_container_t *src_1,
     *dst = bitset_container_create();
     bool returnval = true;  // expect a bitset
     if (*dst != NULL) {
-        bitset_container_t *ourbitset = (bitset_container_t *)*dst;
+        bitset_container_t *ourbitset = CAST_bitset(*dst);
         bitset_set_list(ourbitset->array, src_1->array, src_1->cardinality);
         bitset_set_list(ourbitset->array, src_2->array, src_2->cardinality);
         ourbitset->cardinality = BITSET_UNKNOWN_CARDINALITY;
@@ -258,16 +263,17 @@ bool array_array_container_lazy_union(const array_container_t *src_1,
 }
 
 
-bool array_array_container_lazy_inplace_union(array_container_t *src_1,
-                                      const array_container_t *src_2,
-                                      void **dst) {
+bool array_array_container_lazy_inplace_union(
+    array_container_t *src_1, const array_container_t *src_2,
+    container_t **dst
+){
     int totalCardinality = src_1->cardinality + src_2->cardinality;
     *dst = NULL;
     if (totalCardinality <= ARRAY_LAZY_LOWERBOUND) {
         if(src_1->capacity < totalCardinality) {
           *dst = array_container_create_given_capacity(2  * totalCardinality); // be purposefully generous
           if (*dst != NULL) {
-              array_container_union(src_1, src_2, (array_container_t *)*dst);
+              array_container_union(src_1, src_2, CAST_array(*dst));
           } else {
             return true; // otherwise failure won't be caught
           }
@@ -282,7 +288,7 @@ bool array_array_container_lazy_inplace_union(array_container_t *src_1,
     *dst = bitset_container_create();
     bool returnval = true;  // expect a bitset
     if (*dst != NULL) {
-        bitset_container_t *ourbitset = (bitset_container_t *)*dst;
+        bitset_container_t *ourbitset = CAST_bitset(*dst);
         bitset_set_list(ourbitset->array, src_1->array, src_1->cardinality);
         bitset_set_list(ourbitset->array, src_2->array, src_2->cardinality);
         ourbitset->cardinality = BITSET_UNKNOWN_CARDINALITY;

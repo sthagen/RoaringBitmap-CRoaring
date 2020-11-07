@@ -91,9 +91,10 @@ run_container_t *run_container_from_array(const array_container_t *c) {
  * Allocates and returns new container, which caller is responsible for freeing.
  * It does not free the run container.
  */
-
-void *convert_to_bitset_or_array_container(run_container_t *r, int32_t card,
-                                           uint8_t *resulttype) {
+container_t *convert_to_bitset_or_array_container(
+    run_container_t *r, int32_t card,
+    uint8_t *resulttype
+){
     if (card <= DEFAULT_MAX_SIZE) {
         array_container_t *answer = array_container_create_given_capacity(card);
         answer->cardinality = 0;
@@ -106,7 +107,7 @@ void *convert_to_bitset_or_array_container(run_container_t *r, int32_t card,
             }
         }
         assert(card == answer->cardinality);
-        *resulttype = ARRAY_CONTAINER_TYPE_CODE;
+        *resulttype = ARRAY_CONTAINER_TYPE;
         //run_container_free(r);
         return answer;
     }
@@ -116,7 +117,7 @@ void *convert_to_bitset_or_array_container(run_container_t *r, int32_t card,
         bitset_set_lenrange(answer->array, run_start, r->runs[rlepos].length);
     }
     answer->cardinality = card;
-    *resulttype = BITSET_CONTAINER_TYPE_CODE;
+    *resulttype = BITSET_CONTAINER_TYPE;
     //run_container_free(r);
     return answer;
 }
@@ -126,8 +127,10 @@ void *convert_to_bitset_or_array_container(run_container_t *r, int32_t card,
 /* If a conversion occurs, the caller is responsible to free the original
  * container and
  * he becomes responsible to free the new one. */
-void *convert_run_to_efficient_container(run_container_t *c,
-                                         uint8_t *typecode_after) {
+container_t *convert_run_to_efficient_container(
+    run_container_t *c,
+    uint8_t *typecode_after
+){
     int32_t size_as_run_container =
         run_container_serialized_size_in_bytes(c->n_runs);
 
@@ -142,7 +145,7 @@ void *convert_run_to_efficient_container(run_container_t *c,
             ? size_as_bitset_container
             : size_as_array_container;
     if (size_as_run_container <= min_size_non_run) {  // no conversion
-        *typecode_after = RUN_CONTAINER_TYPE_CODE;
+        *typecode_after = RUN_CONTAINER_TYPE;
         return c;
     }
     if (card <= DEFAULT_MAX_SIZE) {
@@ -157,7 +160,7 @@ void *convert_run_to_efficient_container(run_container_t *c,
                 answer->array[answer->cardinality++] = (uint16_t)run_value;
             }
         }
-        *typecode_after = ARRAY_CONTAINER_TYPE_CODE;
+        *typecode_after = ARRAY_CONTAINER_TYPE;
         return answer;
     }
 
@@ -170,14 +173,16 @@ void *convert_run_to_efficient_container(run_container_t *c,
         bitset_set_range(answer->array, start, end + 1);
     }
     answer->cardinality = card;
-    *typecode_after = BITSET_CONTAINER_TYPE_CODE;
+    *typecode_after = BITSET_CONTAINER_TYPE;
     return answer;
 }
 
 // like convert_run_to_efficient_container but frees the old result if needed
-void *convert_run_to_efficient_container_and_free(run_container_t *c,
-                                                  uint8_t *typecode_after) {
-    void *answer = convert_run_to_efficient_container(c, typecode_after);
+container_t *convert_run_to_efficient_container_and_free(
+    run_container_t *c,
+    uint8_t *typecode_after
+){
+    container_t *answer = convert_run_to_efficient_container(c, typecode_after);
     if (answer != c) run_container_free(c);
     return answer;
 }
@@ -189,18 +194,20 @@ void *convert_run_to_efficient_container_and_free(run_container_t *c,
 // TODO: split into run-  array-  and bitset-  subfunctions for sanity;
 // a few function calls won't really matter.
 
-void *convert_run_optimize(void *c, uint8_t typecode_original,
-                           uint8_t *typecode_after) {
-    if (typecode_original == RUN_CONTAINER_TYPE_CODE) {
-        void *newc = convert_run_to_efficient_container((run_container_t *)c,
-                                                        typecode_after);
+container_t *convert_run_optimize(
+    container_t *c, uint8_t typecode_original,
+    uint8_t *typecode_after
+){
+    if (typecode_original == RUN_CONTAINER_TYPE) {
+        container_t *newc = convert_run_to_efficient_container(
+                                    CAST_run(c), typecode_after);
         if (newc != c) {
             container_free(c, typecode_original);
         }
         return newc;
-    } else if (typecode_original == ARRAY_CONTAINER_TYPE_CODE) {
+    } else if (typecode_original == ARRAY_CONTAINER_TYPE) {
         // it might need to be converted to a run container.
-        array_container_t *c_qua_array = (array_container_t *)c;
+        array_container_t *c_qua_array = CAST_array(c);
         int32_t n_runs = array_container_number_of_runs(c_qua_array);
         int32_t size_as_run_container =
             run_container_serialized_size_in_bytes(n_runs);
@@ -209,7 +216,7 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
             array_container_serialized_size_in_bytes(card);
 
         if (size_as_run_container >= size_as_array_container) {
-            *typecode_after = ARRAY_CONTAINER_TYPE_CODE;
+            *typecode_after = ARRAY_CONTAINER_TYPE;
             return c;
         }
         // else convert array to run container
@@ -230,13 +237,13 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
         assert(run_start >= 0);
         // now prev is the last seen value
         add_run(answer, run_start, prev);
-        *typecode_after = RUN_CONTAINER_TYPE_CODE;
+        *typecode_after = RUN_CONTAINER_TYPE;
         array_container_free(c_qua_array);
         return answer;
     } else if (typecode_original ==
-               BITSET_CONTAINER_TYPE_CODE) {  // run conversions on bitset
+               BITSET_CONTAINER_TYPE) {  // run conversions on bitset
         // does bitset need conversion to run?
-        bitset_container_t *c_qua_bitset = (bitset_container_t *)c;
+        bitset_container_t *c_qua_bitset = CAST_bitset(c);
         int32_t n_runs = bitset_container_number_of_runs(c_qua_bitset);
         int32_t size_as_run_container =
             run_container_serialized_size_in_bytes(n_runs);
@@ -245,7 +252,7 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
 
         if (size_as_bitset_container <= size_as_run_container) {
             // no conversion needed.
-            *typecode_after = BITSET_CONTAINER_TYPE_CODE;
+            *typecode_after = BITSET_CONTAINER_TYPE;
             return c;
         }
         // bitset to runcontainer (ported from Java  RunContainer(
@@ -263,7 +270,7 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
 
             if (cur_word == UINT64_C(0)) {
                 bitset_container_free(c_qua_bitset);
-                *typecode_after = RUN_CONTAINER_TYPE_CODE;
+                *typecode_after = RUN_CONTAINER_TYPE;
                 return answer;
             }
 
@@ -280,7 +287,7 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
                 run_end = 64 + long_ctr * 64;  // exclusive, I guess
                 add_run(answer, run_start, run_end - 1);
                 bitset_container_free(c_qua_bitset);
-                *typecode_after = RUN_CONTAINER_TYPE_CODE;
+                *typecode_after = RUN_CONTAINER_TYPE;
                 return answer;
             }
             int local_run_end = __builtin_ctzll(~cur_word_with_1s);
@@ -296,11 +303,14 @@ void *convert_run_optimize(void *c, uint8_t typecode_original,
         return NULL;
     }
 }
-void *container_from_run_range(const run_container_t *run,
-                                                    uint32_t min, uint32_t max, uint8_t *typecode_after) {
+
+container_t *container_from_run_range(
+    const run_container_t *run,
+    uint32_t min, uint32_t max, uint8_t *typecode_after
+){
     // We expect most of the time to end up with a bitset container
     bitset_container_t *bitset = bitset_container_create();
-    *typecode_after = BITSET_CONTAINER_TYPE_CODE;
+    *typecode_after = BITSET_CONTAINER_TYPE;
     int32_t union_cardinality = 0;
     for (int32_t i = 0; i < run->n_runs; ++i) {
         uint32_t rle_min = run->runs[i].value;
@@ -315,7 +325,7 @@ void *container_from_run_range(const run_container_t *run,
     if(bitset->cardinality <= DEFAULT_MAX_SIZE) {
         // we need to convert to an array container
         array_container_t * array = array_container_from_bitset(bitset);
-        *typecode_after = ARRAY_CONTAINER_TYPE_CODE;
+        *typecode_after = ARRAY_CONTAINER_TYPE;
         bitset_container_free(bitset);
         return array;
     }

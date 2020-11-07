@@ -11,10 +11,11 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <roaring/containers/perfparameters.h>
 #include <roaring/portability.h>
-#include <roaring/roaring_types.h>
-#include <roaring/array_util.h>
+#include <roaring/roaring_types.h>  // roaring_iterator
+#include <roaring/array_util.h>  // binarySearch()/memequals() for inlining
+
+#include <roaring/containers/container_defs.h>  // container_t, perfparameters
 
 #ifdef __cplusplus
 extern "C" { namespace roaring {
@@ -54,15 +55,18 @@ typedef struct rle16_s rle16_t;
  * @n_runs:   number of rle_t pairs in `runs`.
  * @capacity: capacity in rle_t pairs `runs` can hold.
  * @runs:     pairs of rle_t.
- *
  */
-struct run_container_s {
+STRUCT_CONTAINER(run_container_s) {
     int32_t n_runs;
     int32_t capacity;
     rle16_t *runs;
 };
 
 typedef struct run_container_s run_container_t;
+
+#define CAST_run(c)         CAST(run_container_t *, c)  // safer downcast
+#define const_CAST_run(c)   CAST(const run_container_t *, c)
+#define movable_CAST_run(c) movable_CAST(run_container_t **, c)
 
 /* Create a new run container. Return NULL in case of failure. */
 run_container_t *run_container_create(void);
