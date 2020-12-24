@@ -12,6 +12,7 @@ A C++ header for Roaring Bitmaps.
 #include <string>
 
 #if !defined(ROARING_EXCEPTIONS)
+// Note that __cpp_exceptions is required by C++98 and we require C++11 and better.
 # if __cpp_exceptions
 #  define ROARING_EXCEPTIONS 1
 # else
@@ -45,7 +46,8 @@ class Roaring {
      * Create an empty bitmap in the existing memory for the class.
      * The bitmap will be in the "clear" state with no auxiliary allocations.
      */
-    Roaring() {
+    Roaring() : roaring{} { 
+        // The empty constructor roaring{} silences warnings from pedantic static analyzers.
         api::roaring_bitmap_init_cleared(&roaring);
     }
 
@@ -71,7 +73,7 @@ class Roaring {
      * Move constructor. The moved object remains valid, i.e.
      * all methods can still be called on it.
      */
-    Roaring(Roaring &&r) noexcept {
+    explicit Roaring(Roaring &&r) noexcept : roaring(r.roaring) {
         //
         // !!! This clones the bits of the roaring structure to a new location
         // and then overwrites the old bits...assuming that this will still
@@ -79,7 +81,6 @@ class Roaring {
         // those bits were pointers into the structure memory itself.  If such
         // things were possible, a roaring_bitmap_move() API would be needed.
         //
-        roaring = r.roaring;
         api::roaring_bitmap_init_cleared(&r.roaring);
     }
 
@@ -89,8 +90,7 @@ class Roaring {
      * Passing a NULL pointer is unsafe.
      * The pointer to the C struct will be invalid after the call.
      */
-    Roaring(roaring_bitmap_t *s) noexcept {
-        roaring = *s;  // steal the content of the roaring_bitmap_t
+    explicit Roaring(roaring_bitmap_t *s) noexcept : roaring (*s) {
         free(s);  // deallocate the passed-in pointer
     }
 
@@ -590,7 +590,7 @@ class Roaring {
      */
     std::string toString() const {
         struct iter_data {
-            std::string str;
+            std::string str{}; // The empty constructor silences warnings from pedantic static analyzers.
             char first_char = '{';
         } outer_iter_data;
         if (!isEmpty()) {
@@ -681,25 +681,25 @@ class RoaringSetBitForwardIterator final {
      */
     value_type operator*() const { return i.current_value; }
 
-    bool operator<(const type_of_iterator &o) {
+    bool operator<(const type_of_iterator &o) const {
         if (!i.has_value) return false;
         if (!o.i.has_value) return true;
         return i.current_value < *o;
     }
 
-    bool operator<=(const type_of_iterator &o) {
+    bool operator<=(const type_of_iterator &o) const {
         if (!o.i.has_value) return true;
         if (!i.has_value) return false;
         return i.current_value <= *o;
     }
 
-    bool operator>(const type_of_iterator &o) {
+    bool operator>(const type_of_iterator &o)  const {
         if (!o.i.has_value) return false;
         if (!i.has_value) return true;
         return i.current_value > *o;
     }
 
-    bool operator>=(const type_of_iterator &o) {
+    bool operator>=(const type_of_iterator &o)  const {
         if (!i.has_value) return true;
         if (!o.i.has_value) return false;
         return i.current_value >= *o;
@@ -754,7 +754,7 @@ class RoaringSetBitForwardIterator final {
         }
     }
 
-    api::roaring_uint32_iterator_t i;
+    api::roaring_uint32_iterator_t i{}; // The empty constructor silences warnings from pedantic static analyzers.
 };
 
 inline RoaringSetBitForwardIterator Roaring::begin() const {

@@ -1,4 +1,4 @@
-name: Ubuntu-CI
+name: Ubuntu-GCC10-CI
 
 on: push
 
@@ -7,17 +7,19 @@ jobs:
   ci:
     name: ubuntu-gcc
     runs-on: ubuntu-latest
-
     env:
-      CC: gcc
-      CXX: g++
-
+      CC: gcc-10
+      CXX: g++-10
     steps: 
       - uses: actions/checkout@v2
+      - run:   |
+         sudo apt update
+         sudo apt install gcc-10 g++-10
+        shell: bash
       - name: Build and Test
         run: |
           mkdir build
           cd build
-          cmake -DCMAKE_CXX_FLAGS=-fno-exceptions -DROARING_EXCEPTIONS=OFF ..
+          cmake  ..
           cmake --build . 
           ctest . --output-on-failure
