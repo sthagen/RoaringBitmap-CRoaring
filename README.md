@@ -52,7 +52,7 @@ of the latest hardware. Roaring bitmaps are already available on a variety of pl
 - We test the library with ARM, x64/x86 and POWER processors. We only support little endian systems (big endian systems are vanishingly rare).
 - Recent C compiler supporting the C11 standard (GCC 4.8 or better or clang), there is also an optional C++ class that requires a C++ compiler supporting the C++11 standard.
 - CMake (to contribute to the project, users can rely on amalgamation/unity builds if they do not wish to use CMake).
- 
+- Under x64 systems, the library provides runtime dispatch so that optimized functions are called based on the detected CPU features. It works with GCC, clang (version 9 and up) and Visual Studio (2017 and up). Other systems (e.g., ARM) do not need runtime dispatch.
 
 # Using a CMake subdirectory
 
@@ -393,75 +393,25 @@ the project (CRoaring), you can do:
 mkdir -p build
 cd build
 cmake ..
-make
-# follow by 'make test' if you want to test.
+cmake --build .
+# follow by 'ctest' if you want to test.
 # you can also type 'make install' to install the library on your system
 # C header files typically get installed to /usr/local/include/roaring
 # whereas C++ header files get installed to /usr/local/include/roaring
 ```
 (You can replace the ``build`` directory with any other directory name.)
-You can generate a static library by adding ``-DROARING_BUILD_STATIC=ON`` to the command line.
 By default all tests are built on all platforms, to skip building and running tests add `` -DENABLE_ROARING_TESTS=OFF `` to the command line.
 
 As with all ``cmake`` projects, you can specify the compilers you wish to use by adding (for example) ``-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++`` to the ``cmake`` command line.
 
+If you are using clang or gcc and you know your target architecture,  you can set the architecture by specifying `-DROARING_ARCH=arch`. For example, if you have many server but the oldest server is running the Intel `haswell` architecture, you can specify -`DROARING_ARCH=haswell`. In such cases, the produced binary will be optimized for processors having the characteristics of a haswell process and may not run on older architectures. You can find out the list of valid architecture values by typing `man gcc`.
 
-
-If you wish to build an x64 version while disabling AVX2 and BMI2 support at the expense of performance, you can do the following :
-
-```
-mkdir -p buildnoavx
-cd buildnoavx
-cmake -DROARING_DISABLE_AVX=ON ..
-make
-```
-
-The reverse is also possible. Some compilers may not enable AVX2 support, but you can force it in the following manner:
-
-```
-mkdir -p buildwithavx
-cd buildwithavx
-cmake -DFORCE_AVX=ON ..
-make
-```
-
-
-If you have x64 hardware, but you wish to disable all x64-specific optimizations (including AVX), then you can
-do the following...
-
-```
-mkdir -p buildnox64
-cd buildnoavx
-cmake -DROARING_DISABLE_X64=ON ..
-make
-```
-
-We tell the compiler to target the architecture of the build machine by using the `march=native` flag. This give the
-compiler the freedom to use instructions that your CPU support, but can be dangerous if you are going to use the built
-binaries on different machines. For example, you could get a `SIGILL` crash if you run the code on an older machine
-which does not have some of the instructions (e.g. `POPCOUNT`). There are two ways to deal with this:
-
-First, you can disable this feature altogether by specifying `-DROARING_DISABLE_NATIVE=OFF`:
-
-```
-mkdir -p buildnonative
-cd buildnoavx
-cmake -DROARING_DISABLE_NATIVE=ON ..
-make
-```
-
-Second, you can specify the architecture by specifying `-DROARING_ARCH=arch`. For example, if you have many servers
-but the oldest server is running the Intel `westmere` architecture, you can specify -`DROARING_ARCH=westmere`. You can
-find out the list of valid architecture values by typing `man gcc`. If `-DROARING_DISABLE_NATIVE=on` is specified, then
-this option has no effect.
-
-```
-mkdir -p build_westmere
-cd build_westmere
-cmake -DROARING_ARCH=westmere ..
-make
-```
-
+ ```
+ mkdir -p build_haswell
+ cd build_haswell
+ cmake -DROARING_ARCH=haswell ..
+ cmake --build .
+ ```
 
 For a debug release, starting from the root directory of the project (CRoaring), try
 
@@ -469,21 +419,9 @@ For a debug release, starting from the root directory of the project (CRoaring),
 mkdir -p debug
 cd debug
 cmake -DCMAKE_BUILD_TYPE=Debug -DROARING_SANITIZE=ON ..
-make
+ctest
 ```
 
-(Again, you can use the ``-DROARING_DISABLE_AVX=ON`` flag if you need it.)
-
-(Of course you can replace the ``debug`` directory with any other directory name.)
-
-
-To run unit tests (you must first run ``make``):
-
-```
-make test
-```
-
-The detailed output of the tests can be found in ``Testing/Temporary/LastTest.log``.
 
 To run real-data benchmark
 
@@ -525,32 +463,7 @@ To build with at least Visual Studio 2017 directly in the IDE:
 - For testing, in the Standard toolbar, drop the ``Select Startup Item...`` menu and choose one of the tests. Run the test by pressing the button to the left of the dropdown.
 
 
-We have optimizations specific to AVX2 in the code, and they are turned only if the ``__AVX2__`` macro is defined. In turn, these optimizations should only be enabled if you know that your target machines will support AVX2. Given that all recent Intel and AMD processors support AVX2, you may want to make this assumption. Thankfully, Visual Studio does define the ``__AVX2__`` macro whenever the ``/arch:AVX2`` compiler option is set. Unfortunately, this option might not be set by default. Thankfully, you can enable it with CMake by adding the ``-DFORCE_AVX=ON`` flag (e.g., type ``cmake -DFORCE_AVX=ON -DCMAKE_GENERATOR_PLATFORM=x64 ..`` instead of  ``cmake -DCMAKE_GENERATOR_PLATFORM=x64 ..``). If you are building directly in the IDE (with at least Visual Studio 2017 and the Visual C++ tools for CMake component), then right click on ``CMakeLists.txt`` and select "Change CMake Settings". This opens a JSON file called ``CMakeSettings.json``. This file allows you to add CMake flags by editing the ``"cmakeCommandArgs"`` keys. [E.g., you can modify the lines that read ``"cmakeCommandArgs" : ""`` so that they become ``"cmakeCommandArgs" : "-DFORCE_AVX=ON"``.](https://goo.gl/photos/XH7peTKYRCSxWzph9) The relevant part of the JSON file might look at follows:
-
-      {
-        "name": "x64-Debug",
-        "generator": "Visual Studio 15 2017 Win64",
-        "configurationType": "Debug",
-        "buildRoot": "${env.LOCALAPPDATA}\\CMakeBuild\\${workspaceHash}\\build\\${name}",
-        "cmakeCommandArgs": "-DFORCE_AVX=ON",
-        "buildCommandArgs": "-m -v:minimal"
-      },
-      {
-        "name": "x64-Release",
-        "generator": "Visual Studio 15 2017 Win64",
-        "configurationType" : "Release",
-        "buildRoot":  "${env.LOCALAPPDATA}\\CMakeBuild\\${workspaceHash}\\build\\${name}",
-        "cmakeCommandArgs":  "-DFORCE_AVX=ON",
-        "buildCommandArgs": "-m -v:minimal"
-       }
-
-After this modification, the output of CMake should include a line such as this one:
-
-       CMAKE_C_FLAGS:   /arch:AVX2  -Wall
-
-You must understand that this implies that the produced binaries will not run on hardware that does not support AVX2. However, you might get better performance.
-
-We have additionnal optimizations that use inline assembly. However, Visual Studio does not support inline assembly so you cannot benefit from these optimizations under Visual Studio.
+We have optimizations specific to AVX2 in the code, and they are turned dynamically based on the detected hardware at runtime.
 
 
 ## Usage (Using `conan`)

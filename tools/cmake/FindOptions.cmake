@@ -12,22 +12,17 @@ if(ROARING_SANITIZE)
   endif()
 endif()
 
-## -march=native is not supported on some platforms
-if(NOT MSVC)
-
-if(NOT ROARING_DISABLE_NATIVE)
+if((NOT MSVC) AND ROARING_ARCH)
 set(OPT_FLAGS "-march=${ROARING_ARCH}")
 endif()
-endif()
-
 if(ROARING_DISABLE_X64)
   # we can manually disable any optimization for x64
-  set (OPT_FLAGS "${OPT_FLAGS} -DDISABLE_X64" )
+  set (OPT_FLAGS "${OPT_FLAGS} -DROARING_DISABLE_X64" )
 endif()
 if(ROARING_DISABLE_AVX)
-  # we can manually disable AVX by defining DISABLEAVX
-  set (OPT_FLAGS "${OPT_FLAGS} -DDISABLEAVX" )
-endif()
+   # we can manually disable AVX by defining DISABLEAVX
+   set (OPT_FLAGS "${OPT_FLAGS} -DROARING_DISABLE_AVX" )
+ endif()
 if(ROARING_DISABLE_NEON)
   set (OPT_FLAGS "${OPT_FLAGS} -DDISABLENEON" )
 endif()

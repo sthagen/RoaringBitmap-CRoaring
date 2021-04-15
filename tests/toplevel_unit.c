@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include <roaring/roaring.h>
+#include <roaring/misc/configreport.h>
 
 // include internal headers for invasive testing
 #include <roaring/containers/containers.h>
@@ -121,16 +122,16 @@ DEFINE_TEST(issue245) {
     for (uint32_t count = 1; count < targetEntries; count++, offset += 2) {
         roaring_bitmap_add_range_closed(bitmap, offset, offset);
     }
-    
+
     if (!check_serialization(bitmap)) {
         printf("Bitmaps do not match at 2048 entries\n");
         abort();
     }
-    
+
     // Add one more, forcing it to become a bitset
     offset += 2;
     roaring_bitmap_add_range_closed(bitmap, offset, offset);
-    
+
     if (!check_serialization(bitmap)) {
         printf("Bitmaps do not match at 2049 entries\n");
         abort();
@@ -164,6 +165,20 @@ DEFINE_TEST(issue208b) {
     roaring_bitmap_free(r);
 }
 
+DEFINE_TEST(issue288) {
+    roaring_bitmap_t *r1 = roaring_bitmap_create();
+    roaring_bitmap_t *r2 = roaring_bitmap_create();
+    assert_true(roaring_bitmap_get_cardinality(r1) == 0);
+    assert_true(roaring_bitmap_get_cardinality(r2) == 0);
+
+    roaring_bitmap_add(r1, 42);
+    assert_true(roaring_bitmap_get_cardinality(r1) == 1);
+    roaring_bitmap_overwrite(r1, r2);
+    assert_true(roaring_bitmap_get_cardinality(r1) == 0);
+    assert_true(roaring_bitmap_get_cardinality(r2) == 0);
+    roaring_bitmap_free(r1);
+    roaring_bitmap_free(r2);
+}
 
 DEFINE_TEST(can_copy_empty_true) {
   can_copy_empty(true);
@@ -337,7 +352,7 @@ void sbs_compare(sbs_t *sbs) {
     }
 
     uint32_t actual_cardinality = roaring_bitmap_get_cardinality(sbs->roaring);
-    uint32_t *actual_values = 
+    uint32_t *actual_values =
             (uint32_t*)malloc(actual_cardinality * sizeof(uint32_t));
     memset(actual_values, 0, actual_cardinality * sizeof(uint32_t));
     roaring_bitmap_to_uint32_array(sbs->roaring, actual_values);
@@ -4135,7 +4150,10 @@ DEFINE_TEST(test_frozen_serialization_max_containers) {
 
 
 int main() {
+    tellmeall();
+
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(issue288),
         cmocka_unit_test(issue245),
         cmocka_unit_test(issue208),
         cmocka_unit_test(issue208b),

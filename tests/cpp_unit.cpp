@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <iostream>
+#include <roaring/misc/configreport.h>
 
 #include <roaring/roaring.h>  // access to pure C exported API for testing
 
@@ -546,7 +547,7 @@ DEFINE_TEST(test_cpp_clear_64) {
     }
 
 	roaring.clear();
-	
+
     assert_true(roaring.isEmpty());
 }
 
@@ -581,7 +582,7 @@ DEFINE_TEST(test_cpp_bidirectional_iterator_64) {
 	assert_true(*i++ == 0xFFFFFFFFFULL);
 	assert_true(*i++ == 0xA00000000AULL);
 	assert_true(i == roaring.end());
-	assert_true(*--i == 0xA00000000AULL);	
+	assert_true(*--i == 0xA00000000AULL);
 	assert_true(*--i == 0xFFFFFFFFFULL);
 	assert_true(*--i == 0xAFFFFFFF7ULL);
 	assert_true(*--i == 123ULL);
@@ -596,6 +597,7 @@ DEFINE_TEST(test_cpp_bidirectional_iterator_64) {
 }
 
 int main() {
+    roaring::misc::tellmeall();
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(serial_test),
         cmocka_unit_test(test_example_true),

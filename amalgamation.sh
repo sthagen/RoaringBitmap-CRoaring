@@ -46,6 +46,7 @@ $SCRIPTPATH/cpp/roaring64map.hh
 # need to be in this order.
 #
 ALL_PRIVATE_H="
+$SCRIPTPATH/include/roaring/isadetection.h
 $SCRIPTPATH/include/roaring/portability.h
 $SCRIPTPATH/include/roaring/containers/perfparameters.h
 $SCRIPTPATH/include/roaring/containers/container_defs.h
@@ -260,6 +261,3 @@ else
   echo "cc -march=native -O3 -std=c11 -shared -o libroaring.so -fPIC roaring.c"
 fi
 
-newline
-echo "You can try compiling with flags -DDISABLEAVX or -DROARING_DISABLE_X64"
-echo "(which disables AVX and all x64 optimization respectively)"
