@@ -54,9 +54,41 @@ of the latest hardware. Roaring bitmaps are already available on a variety of pl
 - CMake (to contribute to the project, users can rely on amalgamation/unity builds if they do not wish to use CMake).
 - Under x64 systems, the library provides runtime dispatch so that optimized functions are called based on the detected CPU features. It works with GCC, clang (version 9 and up) and Visual Studio (2017 and up). Other systems (e.g., ARM) do not need runtime dispatch.
 
-# Using a CMake subdirectory
+# Using as a CMake dependency
 
-If you like CMake, you can just drop CRoaring in your project as a subdirectory and get going. [See our demonstration for further details](https://github.com/RoaringBitmap/croaring_cmake_demo).
+If you like CMake, you can just a few lines in you `CMakeLists.txt` file to grab a `CRoaring` release. [See our demonstration for further details](https://github.com/RoaringBitmap/croaring_cmake_demo_single_file).
+
+If you installed the CRoaring library locally, you may use it with CMake's `find_package` function as in this example:
+
+```CMake
+cmake_minimum_required(VERSION 3.15)
+
+project(test_roaring_install VERSION 0.1.0 LANGUAGES CXX C)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+find_package(roaring REQUIRED)
+
+file(WRITE main.cpp "
+#include <iostream>
+#include \"roaring/roaring.hh\"
+int main() {
+  roaring::Roaring r1;
+  for (uint32_t i = 100; i < 1000; i++) {
+    r1.add(i);
+  }
+  std::cout << \"cardinality = \" << r1.cardinality() << std::endl;
+  return 0;
+}")
+
+add_executable(repro main.cpp)
+target_link_libraries(repro PUBLIC roaring::roaring)
+```
 
 
 # Amalgamation/Unity Build
@@ -137,6 +169,9 @@ The C interface is found in the file ``include/roaring/roaring.h``. We have C++ 
 Some users have to deal with large volumes of data. It  may be important for these users to be aware of the `addMany` (C++) `roaring_bitmap_or_many` (C) functions as it is much faster and economical to add values in batches when possible. Furthermore, calling periodically the `runOptimize` (C++) or `roaring_bitmap_run_optimize` (C) functions may help.
 
 # Example (C)
+
+
+This example assumes that CRoaring has been build and that you are linking against the corresponding library. By default, CRoaring will install its header files in a `roaring` directory. If you are working from the amalgamation script, you may add the line `#include "roaring.c"` if you are not linking against a prebuilt CRoaring library and replace `#include <roaring/roaring.h>` by `#include "roaring.h"`. 
 
 ```c
 #include <roaring/roaring.h>
@@ -280,6 +315,9 @@ int main() {
 ```
 
 # Example (C++)
+
+
+This example assumes that CRoaring has been build and that you are linking against the corresponding library. By default, CRoaring will install its header files in a `roaring` directory so you may need to replace `#include "roaring.hh"` by `#include <roaring/roaring.hh>`. If you are working from the amalgamation script, you may add the line `#include "roaring.c"` if you are not linking against a CRoaring prebuilt library. 
 
 ```c++
 #include <iostream>
