@@ -11,11 +11,15 @@ if (NOT CMAKE_BUILD_TYPE)
                 set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+
+if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 11)
+    message(FATAL_ERROR "${PROJECT_NAME} requires at least apple-clang version 11 to support runtime dispatching.")
+endif()
 set(ROARING_LIB_NAME roaring)
 set(PROJECT_VERSION_MAJOR 0)
 set(PROJECT_VERSION_MINOR 3)
-set(PROJECT_VERSION_PATCH 2)
-set(ROARING_LIB_VERSION "0.3.2" CACHE STRING "Roaring library version")
+set(PROJECT_VERSION_PATCH 3)
+set(ROARING_LIB_VERSION "0.3.3" CACHE STRING "Roaring library version")
 set(ROARING_LIB_SOVERSION "1" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
