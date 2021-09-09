@@ -628,9 +628,9 @@ class Roaring64Map {
             buf += sizeof(uint32_t);
             // read map value Roaring
             Roaring read_var = Roaring::read(buf, portable);
-            result.emplaceOrInsert(key, read_var);
             // forward buffer past the last Roaring Bitmap
             buf += read_var.getSizeInBytes(portable);
+            result.emplaceOrInsert(key, std::move(read_var));
         }
         return result;
     }
@@ -665,11 +665,11 @@ class Roaring64Map {
             maxbytes -= sizeof(uint32_t);
             // read map value Roaring
             Roaring read_var = Roaring::readSafe(buf, maxbytes);
-            result.emplaceOrInsert(key, read_var);
             // forward buffer past the last Roaring Bitmap
             size_t tz = read_var.getSizeInBytes(true);
             buf += tz;
             maxbytes -= tz;
+            result.emplaceOrInsert(key, std::move(read_var));
         }
         return result;
     }
@@ -886,6 +886,14 @@ class Roaring64Map {
         roarings.insert(std::make_pair(key, value));
 #else
         roarings.emplace(std::make_pair(key, value));
+#endif
+    }
+
+    void emplaceOrInsert(const uint32_t key, Roaring &&value) {
+#if defined(__GLIBCXX__) && __GLIBCXX__ < 20130322
+        roarings.insert(std::make_pair(key, std::move(value)));
+#else
+        roarings.emplace(key, value);
 #endif
     }
 };
