@@ -4,6 +4,7 @@
  */
 
 #include <assert.h>
+#include <roaring/memory.h>
 #include <roaring/containers/array.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,16 +32,16 @@ extern inline bool array_container_full(const array_container_t *array);
 array_container_t *array_container_create_given_capacity(int32_t size) {
     array_container_t *container;
 
-    if ((container = (array_container_t *)malloc(sizeof(array_container_t))) ==
+    if ((container = (array_container_t *)roaring_malloc(sizeof(array_container_t))) ==
         NULL) {
         return NULL;
     }
 
     if( size <= 0 ) { // we don't want to rely on malloc(0)
         container->array = NULL;
-    } else if ((container->array = (uint16_t *)malloc(sizeof(uint16_t) * size)) ==
+    } else if ((container->array = (uint16_t *)roaring_malloc(sizeof(uint16_t) * size)) ==
         NULL) {
-        free(container);
+        roaring_free(container);
         return NULL;
     }
 
@@ -80,18 +81,45 @@ array_container_t *array_container_clone(const array_container_t *src) {
     return newcontainer;
 }
 
+void array_container_offset(const array_container_t *c,
+                            container_t **loc, container_t **hic,
+                            uint16_t offset) {
+    array_container_t *lo = NULL, *hi = NULL;
+    int top, lo_cap, hi_cap;
+
+    top = (1 << 16) - offset;
+
+    lo_cap = count_less(c->array, c->cardinality, top);
+    if (loc && lo_cap) {
+        lo = array_container_create_given_capacity(lo_cap);
+        for (int i = 0; i < lo_cap; ++i) {
+            array_container_add(lo, c->array[i] + offset);
+        }
+        *loc = (container_t*)lo;
+    }
+
+    hi_cap = c->cardinality - lo_cap;
+    if (hic && hi_cap) {
+        hi = array_container_create_given_capacity(hi_cap);
+        for (int i = lo_cap; i < c->cardinality; ++i) {
+            array_container_add(hi, c->array[i] + offset);
+        }
+        *hic = (container_t*)hi;
+    }
+}
+
 int array_container_shrink_to_fit(array_container_t *src) {
     if (src->cardinality == src->capacity) return 0;  // nothing to do
     int savings = src->capacity - src->cardinality;
     src->capacity = src->cardinality;
     if( src->capacity == 0) { // we do not want to rely on realloc for zero allocs
-      free(src->array);
+      roaring_free(src->array);
       src->array = NULL;
     } else {
       uint16_t *oldarray = src->array;
       src->array =
-        (uint16_t *)realloc(oldarray, src->capacity * sizeof(uint16_t));
-      if (src->array == NULL) free(oldarray);  // should never happen?
+        (uint16_t *)roaring_realloc(oldarray, src->capacity * sizeof(uint16_t));
+      if (src->array == NULL) roaring_free(oldarray);  // should never happen?
     }
     return savings;
 }
@@ -99,10 +127,10 @@ int array_container_shrink_to_fit(array_container_t *src) {
 /* Free memory. */
 void array_container_free(array_container_t *arr) {
     if(arr->array != NULL) {// Jon Strabala reports that some tools complain otherwise
-      free(arr->array);
+        roaring_free(arr->array);
       arr->array = NULL; // pedantic
     }
-    free(arr);
+    roaring_free(arr);
 }
 
 static inline int32_t grow_capacity(int32_t capacity) {
@@ -127,14 +155,14 @@ void array_container_grow(array_container_t *container, int32_t min,
 
     if (preserve) {
         container->array =
-            (uint16_t *)realloc(array, new_capacity * sizeof(uint16_t));
-        if (container->array == NULL) free(array);
+            (uint16_t *)roaring_realloc(array, new_capacity * sizeof(uint16_t));
+        if (container->array == NULL) roaring_free(array);
     } else {
         // Jon Strabala reports that some tools complain otherwise
         if (array != NULL) {
-          free(array);
+          roaring_free(array);
         }
-        container->array = (uint16_t *)malloc(new_capacity * sizeof(uint16_t));
+        container->array = (uint16_t *)roaring_malloc(new_capacity * sizeof(uint16_t));
     }
 
     //  handle the case where realloc fails

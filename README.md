@@ -1,4 +1,4 @@
-# CRoaring [![Build Status](https://travis-ci.org/RoaringBitmap/CRoaring.svg)](https://travis-ci.org/RoaringBitmap/CRoaring)    [![Build status](https://ci.appveyor.com/api/projects/status/gr4ibsflqs9by1bc/branch/master?svg=true)](https://ci.appveyor.com/project/lemire/croaring/branch/master) [![Build Status](https://cloud.drone.io/api/badges/RoaringBitmap/CRoaring/status.svg)](https://cloud.drone.io/RoaringBitmap/CRoaring)
+# CRoaring [![Build status](https://ci.appveyor.com/api/projects/status/gr4ibsflqs9by1bc/branch/master?svg=true)](https://ci.appveyor.com/project/lemire/croaring/branch/master) [![Build Status](https://cloud.drone.io/api/badges/RoaringBitmap/CRoaring/status.svg)](https://cloud.drone.io/RoaringBitmap/CRoaring)
 
 Portable Roaring bitmaps in C (and C++) with full support for your favorite compiler (GNU GCC, LLVM's clang, Visual Studio). Included in the [Awesome C](https://github.com/kozross/awesome-c) list of open source C software.
 
@@ -167,6 +167,22 @@ The C interface is found in the file ``include/roaring/roaring.h``. We have C++ 
 # Dealing with large volumes
 
 Some users have to deal with large volumes of data. It  may be important for these users to be aware of the `addMany` (C++) `roaring_bitmap_or_many` (C) functions as it is much faster and economical to add values in batches when possible. Furthermore, calling periodically the `runOptimize` (C++) or `roaring_bitmap_run_optimize` (C) functions may help.
+
+# Custom memory allocators
+For general users, CRoaring would apply default allocator without extra codes. But global memory hook is also provided for those who want a custom memory allocator. Here is an example:
+```C
+#include <roaring.h>
+
+int main(){
+    // define with your own memory hook
+    roaring_memory_t my_hook{my_malloc, my_free ...};
+    // initialize global memory hook
+    roaring_init_memory_hook(my_hook);
+    // write you code here
+    ...
+}
+```
+
 
 # Example (C)
 

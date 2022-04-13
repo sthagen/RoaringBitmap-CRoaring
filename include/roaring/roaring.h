@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stddef.h>  // for `size_t`
 
+#include <roaring/memory.h>
 #include <roaring/roaring_types.h>
 #include <roaring/roaring_version.h>
 
@@ -84,6 +85,8 @@ static inline void roaring_bitmap_set_copy_on_write(roaring_bitmap_t* r,
     }
 }
 
+roaring_bitmap_t *roaring_bitmap_add_offset(const roaring_bitmap_t *bm,
+                                            int64_t offset);
 /**
  * Describe the inner structure of the bitmap.
  */
@@ -358,7 +361,7 @@ bool roaring_bitmap_is_empty(const roaring_bitmap_t *r);
 void roaring_bitmap_clear(roaring_bitmap_t *r);
 
 /**
- * Convert the bitmap to an array, output in `ans`,
+ * Convert the bitmap to a sorted array, output in `ans`.
  *
  * Caller is responsible to ensure that there is enough memory allocated, e.g.
  *
@@ -368,7 +371,7 @@ void roaring_bitmap_to_uint32_array(const roaring_bitmap_t *r, uint32_t *ans);
 
 
 /**
- * Convert the bitmap to an array from `offset` by `limit`, output in `ans`.
+ * Convert the bitmap to a sorted array from `offset` by `limit`, output in `ans`.
  *
  * Caller is responsible to ensure that there is enough memory allocated, e.g.
  *

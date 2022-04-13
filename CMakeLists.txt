@@ -17,10 +17,10 @@ if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_C_COMPILER_VERSION VERSIO
 endif()
 set(ROARING_LIB_NAME roaring)
 set(PROJECT_VERSION_MAJOR 0)
-set(PROJECT_VERSION_MINOR 4)
+set(PROJECT_VERSION_MINOR 5)
 set(PROJECT_VERSION_PATCH 0)
-set(ROARING_LIB_VERSION "0.4.0" CACHE STRING "Roaring library version")
-set(ROARING_LIB_SOVERSION "2" CACHE STRING "Roaring library soversion")
+set(ROARING_LIB_VERSION "0.5.0" CACHE STRING "Roaring library version")
+set(ROARING_LIB_SOVERSION "3" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
 if(NOT ROARING_EXCEPTIONS)
@@ -51,6 +51,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake")
 find_package(CTargets)
 find_package(Options)
 find_package(LTO)
+include(Import)
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/roaring.pc.in"
                "${CMAKE_CURRENT_BINARY_DIR}/roaring.pc" @ONLY)

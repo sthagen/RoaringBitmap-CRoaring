@@ -176,6 +176,24 @@ DEFINE_TEST(issue316) {
     assert_true(r1 == r2);
 }
 
+DEFINE_TEST(issue_336) {
+    Roaring64Map r1, r2;
+
+    r1.add((uint64_t)0x000000000UL);
+    r1.add((uint64_t)0x100000000UL);
+    r1.add((uint64_t)0x200000000UL);
+    r1.add((uint64_t)0x300000000UL);
+
+    r1.remove((uint64_t)0x100000000UL);
+    r1.remove((uint64_t)0x200000000UL);
+
+    r2.add((uint64_t)0x000000000UL);
+    r2.add((uint64_t)0x300000000UL);
+
+    assert_true(r1 == r2);
+    assert_true(r2 == r1);
+}
+
 void test_roaring64_iterate_multi_roaring(void) {
     Roaring64Map roaring;
 
@@ -660,7 +678,7 @@ DEFINE_TEST(test_cpp_frozen) {
 
     // allocate a buffer and serialize to it
     size_t num_bytes = r1.getFrozenSizeInBytes();
-    char *buf = (char *)roaring_bitmap_aligned_malloc(32, num_bytes);
+    char *buf = (char *)roaring_aligned_malloc(32, num_bytes);
     r1.writeFrozen(buf);
 
     // ensure the frozen bitmap is the same as the original
@@ -704,7 +722,7 @@ DEFINE_TEST(test_cpp_frozen) {
         assert_true(b == r1);
     }
 
-    roaring_bitmap_aligned_free(buf);
+    roaring_aligned_free(buf);
 }
 
 DEFINE_TEST(test_cpp_frozen_64) {
@@ -733,7 +751,7 @@ DEFINE_TEST(test_cpp_frozen_64) {
     r1.runOptimize();
 
     size_t num_bytes = r1.getFrozenSizeInBytes();
-    char *buf = (char *)roaring_bitmap_aligned_malloc(32, num_bytes);
+    char *buf = (char *)roaring_aligned_malloc(32, num_bytes);
     r1.writeFrozen(buf);
 
     const Roaring64Map r2 = Roaring64Map::frozenView(buf);
@@ -767,7 +785,7 @@ DEFINE_TEST(test_cpp_frozen_64) {
         assert_true(b == r1);
     }
 
-    roaring_bitmap_aligned_free(buf);
+    roaring_aligned_free(buf);
 }
 
 int main() {
@@ -775,6 +793,7 @@ int main() {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(issue316),
         cmocka_unit_test(test_issue304),
+        cmocka_unit_test(issue_336),
         cmocka_unit_test(serial_test),
         cmocka_unit_test(test_example_true),
         cmocka_unit_test(test_example_false),

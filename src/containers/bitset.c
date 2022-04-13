@@ -13,6 +13,7 @@
 #include <roaring/bitset_util.h>
 #include <roaring/containers/bitset.h>
 #include <roaring/portability.h>
+#include <roaring/memory.h>
 #include <roaring/utilasm.h>
 
 #ifdef __cplusplus
@@ -47,16 +48,16 @@ void bitset_container_set_all(bitset_container_t *bitset) {
 /* Create a new bitset. Return NULL in case of failure. */
 bitset_container_t *bitset_container_create(void) {
     bitset_container_t *bitset =
-        (bitset_container_t *)malloc(sizeof(bitset_container_t));
+        (bitset_container_t *)roaring_malloc(sizeof(bitset_container_t));
 
     if (!bitset) {
         return NULL;
     }
     // sizeof(__m256i) == 32
-    bitset->words = (uint64_t *)roaring_bitmap_aligned_malloc(
+    bitset->words = (uint64_t *)roaring_aligned_malloc(
         32, sizeof(uint64_t) * BITSET_CONTAINER_SIZE_IN_WORDS);
     if (!bitset->words) {
-        free(bitset);
+        roaring_free(bitset);
         return NULL;
     }
     bitset_container_clear(bitset);
@@ -102,31 +103,95 @@ void bitset_container_add_from_range(bitset_container_t *bitset, uint32_t min,
 /* Free memory. */
 void bitset_container_free(bitset_container_t *bitset) {
     if(bitset->words != NULL) {// Jon Strabala reports that some tools complain otherwise
-      roaring_bitmap_aligned_free(bitset->words);
+      roaring_aligned_free(bitset->words);
       bitset->words = NULL; // pedantic
     }
-    free(bitset);
+    roaring_free(bitset);
 }
 
 /* duplicate container. */
 bitset_container_t *bitset_container_clone(const bitset_container_t *src) {
     bitset_container_t *bitset =
-        (bitset_container_t *)malloc(sizeof(bitset_container_t));
+        (bitset_container_t *)roaring_malloc(sizeof(bitset_container_t));
 
     if (!bitset) {
         return NULL;
     }
     // sizeof(__m256i) == 32
-    bitset->words = (uint64_t *)roaring_bitmap_aligned_malloc(
+    bitset->words = (uint64_t *)roaring_aligned_malloc(
         32, sizeof(uint64_t) * BITSET_CONTAINER_SIZE_IN_WORDS);
     if (!bitset->words) {
-        free(bitset);
+        roaring_free(bitset);
         return NULL;
     }
     bitset->cardinality = src->cardinality;
     memcpy(bitset->words, src->words,
            sizeof(uint64_t) * BITSET_CONTAINER_SIZE_IN_WORDS);
     return bitset;
+}
+
+void bitset_container_offset(const bitset_container_t *c,
+                             container_t **loc, container_t **hic,
+                             uint16_t offset) {
+    bitset_container_t *bc = NULL;
+    uint64_t val;
+    uint16_t b, i, end;
+
+    b = offset >> 6;
+    i = offset % 64;
+    end = 1024 - b;
+
+    if (loc != NULL) {
+        bc = bitset_container_create();
+        if (i == 0) {
+            memcpy(bc->words+b, c->words, 8*end);
+        } else {
+            bc->words[b] = c->words[0] << i;
+            for (uint32_t k = 1; k < end; ++k) {
+                val = c->words[k] << i;
+                val |= c->words[k-1] >> (64 - i);
+                bc->words[b+k] = val;
+            }
+        }
+
+        bc->cardinality = bitset_container_compute_cardinality(bc);
+        if (bc->cardinality != 0) {
+            *loc = bc;
+        }
+        if (bc->cardinality == c->cardinality) {
+            return;
+        }
+    }
+
+    if (hic == NULL) {
+        // Both hic and loc can't be NULL, so bc is never NULL here
+        if (bc->cardinality == 0) {
+            bitset_container_free(bc);
+	}
+        return;
+    }
+
+    if (bc == NULL || bc->cardinality != 0) {
+        bc = bitset_container_create();
+    }
+
+    if (i == 0) {
+        memcpy(bc->words, c->words+end, 8*b);
+    } else {
+        for (uint32_t k = end; k < 1024; ++k) {
+            val = c->words[k] << i;
+	    val |= c->words[k-1] >> (64 - i);
+	    bc->words[k-end] = val;
+        }
+        bc->words[b] = c->words[1023] >> (64 - i);
+    }
+
+    bc->cardinality = bitset_container_compute_cardinality(bc);
+    if (bc->cardinality == 0) {
+	    bitset_container_free(bc);
+	    return;
+    }
+    *hic = bc;
 }
 
 void bitset_container_set_range(bitset_container_t *bitset, uint32_t begin,
