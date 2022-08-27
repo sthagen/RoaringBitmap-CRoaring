@@ -4,7 +4,7 @@ A C++ header for Roaring Bitmaps.
 #ifndef INCLUDE_ROARING_HH_
 #define INCLUDE_ROARING_HH_
 
-#include <stdarg.h>
+#include <cstdarg>
 
 #include <algorithm>
 #include <new>
@@ -77,7 +77,7 @@ public:
      * Move constructor. The moved object remains valid, i.e.
      * all methods can still be called on it.
      */
-    explicit Roaring(Roaring &&r) noexcept : roaring(r.roaring) {
+    Roaring(Roaring &&r) noexcept : roaring(r.roaring) {
         //
         // !!! This clones the bits of the roaring structure to a new location
         // and then overwrites the old bits...assuming that this will still
@@ -127,10 +127,17 @@ public:
     }
 
     /**
-     * Add all values from x (included) to y (excluded)
+     * Add all values in range [min, max)
      */
-    void addRange(const uint64_t x, const uint64_t y)  {
-        return api::roaring_bitmap_add_range(&roaring, x, y);
+    void addRange(const uint64_t min, const uint64_t max)  {
+        return api::roaring_bitmap_add_range(&roaring, min, max);
+    }
+
+    /**
+     * Add all values in range [min, max]
+     */
+    void addRangeClosed(const uint32_t min, const uint32_t max)  {
+        return api::roaring_bitmap_add_range_closed(&roaring, min, max);
     }
 
     /**
@@ -152,6 +159,20 @@ public:
      */
     bool removeChecked(uint32_t x) {
         return api::roaring_bitmap_remove_checked(&roaring, x);
+    }
+
+    /**
+     * Remove all values in range [min, max)
+     */
+    void removeRange(uint64_t min, uint64_t max) {
+        return api::roaring_bitmap_remove_range(&roaring, min, max);
+    }
+
+    /**
+     * Remove all values in range [min, max]
+     */
+    void removeRangeClosed(uint32_t min, uint32_t max) {
+        return api::roaring_bitmap_remove_range_closed(&roaring, min, max);
     }
 
     /**
@@ -325,6 +346,7 @@ public:
 
     /**
      * Compute the negation of the roaring bitmap within a specified interval.
+     * interval: [range_start, range_end).
      * Areas outside the range are passed through unchanged.
      */
     void flip(uint64_t range_start, uint64_t range_end) {
@@ -766,8 +788,8 @@ public:
         return i.current_value != *o || i.has_value != o.i.has_value;
     }
 
-    RoaringSetBitForwardIterator(const Roaring &parent,
-                                 bool exhausted = false) {
+    explicit RoaringSetBitForwardIterator(const Roaring &parent,
+                                          bool exhausted = false) {
         if (exhausted) {
             i.parent = &parent.roaring;
             i.container_index = INT32_MAX;

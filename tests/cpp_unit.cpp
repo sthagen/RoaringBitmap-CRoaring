@@ -1,18 +1,24 @@
 /**
-* The purpose of this test is to check that we can call CRoaring from C++
-*/
+ * The purpose of this test is to check that we can call CRoaring from C++
+ */
 
-#include <type_traits>
 #include <assert.h>
+#include <iostream>
+#include <roaring/misc/configreport.h>
+#include <roaring/roaring.h>  // access to pure C exported API for testing
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <vector>
+
+
+#include <fstream>
 #include <iostream>
-#include <roaring/misc/configreport.h>
+#include <type_traits>
+#include <vector>
 
-#include <roaring/roaring.h>  // access to pure C exported API for testing
-
+#include "config.h"
 #include "roaring.hh"
 using roaring::Roaring;  // the C++ wrapper class
 
@@ -21,9 +27,8 @@ using roaring::Roaring64Map;  // C++ class extended for 64-bit numbers
 
 #include "test.h"
 
-
 static_assert(std::is_nothrow_move_constructible<Roaring>::value,
-        "Expected Roaring to be no except move constructable");
+              "Expected Roaring to be no except move constructable");
 
 bool roaring_iterator_sumall(uint32_t value, void *param) {
     *(uint32_t *)param += value;
@@ -35,21 +40,20 @@ bool roaring_iterator_sumall64(uint64_t value, void *param) {
     return true;  // we always process all values
 }
 
-
 DEFINE_TEST(serial_test) {
-  uint32_t values[] = {5, 2, 3, 4, 1};
-  Roaring r1(sizeof(values)/sizeof(uint32_t), values);
-  uint32_t serializesize = r1.getSizeInBytes();
-  char *serializedbytes = new char [serializesize];
-  r1.write(serializedbytes);
-  Roaring t = Roaring::read(serializedbytes);
-  assert_true(r1 == t);
-  char *copy = new char[serializesize];
-  memcpy(copy, serializedbytes, serializesize);
-  Roaring t2 = Roaring::read(copy);
-  assert_true(t2== t);
-  delete[] serializedbytes;
-  delete[] copy;
+    uint32_t values[] = {5, 2, 3, 4, 1};
+    Roaring r1(sizeof(values) / sizeof(uint32_t), values);
+    uint32_t serializesize = r1.getSizeInBytes();
+    char *serializedbytes = new char[serializesize];
+    r1.write(serializedbytes);
+    Roaring t = Roaring::read(serializedbytes);
+    assert_true(r1 == t);
+    char *copy = new char[serializesize];
+    memcpy(copy, serializedbytes, serializesize);
+    Roaring t2 = Roaring::read(copy);
+    assert_true(t2 == t);
+    delete[] serializedbytes;
+    delete[] copy;
 }
 
 void test_example(bool copy_on_write) {
@@ -194,6 +198,16 @@ DEFINE_TEST(issue_336) {
     assert_true(r2 == r1);
 }
 
+DEFINE_TEST(issue_372) {
+    Roaring64Map roaring;
+    // Flip multiple buckets
+    uint64_t upper_bound = ((uint64_t)1 << 32) * 3;
+    roaring.flip(0, upper_bound);
+    assert_int_equal(roaring.cardinality(), upper_bound);
+    roaring.flip(1, upper_bound - 1);
+    assert_int_equal(roaring.cardinality(), 2);
+}
+
 void test_roaring64_iterate_multi_roaring(void) {
     Roaring64Map roaring;
 
@@ -203,7 +217,7 @@ void test_roaring64_iterate_multi_roaring(void) {
     assert_true(roaring.addChecked(uint64_t(2) << 32));
 
     uint64_t iterate_count = 0;
-    auto iterate_func = [](uint64_t , void *param) -> bool {
+    auto iterate_func = [](uint64_t, void *param) -> bool {
         auto *count = static_cast<uint64_t *>(param);
         *count += 1;
         return *count < 2;
@@ -300,7 +314,7 @@ void test_example_cpp(bool copy_on_write) {
     assert_true(expectedsize == t.getSizeInBytes());
     assert_true(r1 == t);
 
-    Roaring t2 = Roaring::readSafe(serializedbytes,expectedsize);
+    Roaring t2 = Roaring::readSafe(serializedbytes, expectedsize);
     assert_true(expectedsize == t2.getSizeInBytes());
     assert_true(r1 == t2);
 
@@ -328,7 +342,6 @@ void test_example_cpp(bool copy_on_write) {
     Roaring::const_iterator j = rogue.begin();
     j.equalorlarger(4);
     assert_true(*j == 4);
-
 
     // test move constructor
     {
@@ -375,40 +388,39 @@ void test_example_cpp(bool copy_on_write) {
 }
 
 void test_run_compression_cpp(bool copy_on_write) {
-  Roaring r1;
-  r1.setCopyOnWrite(copy_on_write);
-  for (uint32_t i = 100; i <= 10000; i++) {
-    r1.add(i);
-  }
-  uint64_t size_origin = r1.getSizeInBytes();
-  bool has_run = r1.runOptimize();
-  uint64_t size_optimized = r1.getSizeInBytes();
-  assert_true(has_run);
-  assert_true(size_origin > size_optimized);
-  bool removed = r1.removeRunCompression();
-  assert_true(removed);
-  uint64_t size_removed = r1.getSizeInBytes();
-  assert_true(size_removed > size_optimized);
-  return;
+    Roaring r1;
+    r1.setCopyOnWrite(copy_on_write);
+    for (uint32_t i = 100; i <= 10000; i++) {
+        r1.add(i);
+    }
+    uint64_t size_origin = r1.getSizeInBytes();
+    bool has_run = r1.runOptimize();
+    uint64_t size_optimized = r1.getSizeInBytes();
+    assert_true(has_run);
+    assert_true(size_origin > size_optimized);
+    bool removed = r1.removeRunCompression();
+    assert_true(removed);
+    uint64_t size_removed = r1.getSizeInBytes();
+    assert_true(size_removed > size_optimized);
+    return;
 }
 
-
 void test_run_compression_cpp_64(bool copy_on_write) {
-  Roaring64Map r1;
-  r1.setCopyOnWrite(copy_on_write);
-  for (uint64_t i = 100; i <= 10000; i++) {
-    r1.add(i);
-  }
-  uint64_t size_origin = r1.getSizeInBytes();
-  bool has_run = r1.runOptimize();
-  uint64_t size_optimized = r1.getSizeInBytes();
-  assert_true(has_run);
-  assert_true(size_origin > size_optimized);
-  bool removed = r1.removeRunCompression();
-  assert_true(removed);
-  uint64_t size_removed = r1.getSizeInBytes();
-  assert_true(size_removed > size_optimized);
-  return;
+    Roaring64Map r1;
+    r1.setCopyOnWrite(copy_on_write);
+    for (uint64_t i = 100; i <= 10000; i++) {
+        r1.add(i);
+    }
+    uint64_t size_origin = r1.getSizeInBytes();
+    bool has_run = r1.runOptimize();
+    uint64_t size_optimized = r1.getSizeInBytes();
+    assert_true(has_run);
+    assert_true(size_origin > size_optimized);
+    bool removed = r1.removeRunCompression();
+    assert_true(removed);
+    uint64_t size_removed = r1.getSizeInBytes();
+    assert_true(size_removed > size_optimized);
+    return;
 }
 
 void test_example_cpp_64(bool copy_on_write) {
@@ -535,7 +547,7 @@ void test_example_cpp_64(bool copy_on_write) {
         b.add(1u);
         b.add(2u);
         b.add(3u);
-		assert_int_equal(3, b.cardinality());
+        assert_int_equal(3, b.cardinality());
 
         a = std::move(b);
         assert_int_equal(3, a.cardinality());
@@ -555,9 +567,13 @@ DEFINE_TEST(test_example_cpp_64_true) { test_example_cpp_64(true); }
 
 DEFINE_TEST(test_example_cpp_64_false) { test_example_cpp_64(false); }
 
-DEFINE_TEST(test_run_compression_cpp_64_true) { test_run_compression_cpp_64(true); }
+DEFINE_TEST(test_run_compression_cpp_64_true) {
+    test_run_compression_cpp_64(true);
+}
 
-DEFINE_TEST(test_run_compression_cpp_64_false) { test_run_compression_cpp_64(false); }
+DEFINE_TEST(test_run_compression_cpp_64_false) {
+    test_run_compression_cpp_64(false);
+}
 
 DEFINE_TEST(test_run_compression_cpp_true) { test_run_compression_cpp(true); }
 
@@ -565,7 +581,7 @@ DEFINE_TEST(test_run_compression_cpp_false) { test_run_compression_cpp(false); }
 
 DEFINE_TEST(test_cpp_add_remove_checked) {
     Roaring roaring;
-    uint32_t values[4] = { 123, 9999, 0xFFFFFFF7, 0xFFFFFFFF};
+    uint32_t values[4] = {123, 9999, 0xFFFFFFF7, 0xFFFFFFFF};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values[i]));
         assert_false(roaring.addChecked(values[i]));
@@ -580,7 +596,7 @@ DEFINE_TEST(test_cpp_add_remove_checked) {
 DEFINE_TEST(test_cpp_add_remove_checked_64) {
     Roaring64Map roaring;
 
-    uint32_t values32[4] = { 123, 9999, 0xFFFFFFF7, 0xFFFFFFFF};
+    uint32_t values32[4] = {123, 9999, 0xFFFFFFF7, 0xFFFFFFFF};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values32[i]));
         assert_false(roaring.addChecked(values32[i]));
@@ -590,7 +606,8 @@ DEFINE_TEST(test_cpp_add_remove_checked_64) {
         assert_false(roaring.removeChecked(values32[i]));
     }
 
-    uint64_t values64[4] = { 123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL, 0xFFFFFFFFFULL};
+    uint64_t values64[4] = {123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL,
+                            0xFFFFFFFFFULL};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values64[i]));
         assert_false(roaring.addChecked(values64[i]));
@@ -602,15 +619,225 @@ DEFINE_TEST(test_cpp_add_remove_checked_64) {
     assert_true(roaring.isEmpty());
 }
 
+DEFINE_TEST(test_cpp_add_range) {
+    std::vector<std::pair<uint64_t, uint64_t>> ranges = {
+      {1, 5},
+      {1, 1},
+      {2, 1},
+    };
+    for (const auto &range : ranges) {
+        uint64_t min = range.first;
+        uint64_t max = range.second;
+        Roaring r1;
+        r1.addRangeClosed(min, max);
+        Roaring r2;
+        for (uint64_t v = min; v <= max; ++v) {
+            r2.add(v);
+        }
+        assert_true(r1 == r2);
+    }
+}
+
+DEFINE_TEST(test_cpp_remove_range) {
+    {
+        // min < r1.minimum, max > r1.maximum
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(0, 5);
+        assert_true(r1.isEmpty());
+    }
+    {
+        // min < r1.minimum, max < r1.maximum, max does not exactly match an
+        // element
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(0, 3);
+        Roaring r2 = Roaring::bitmapOf(1, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // min < r1.minimum, max < r1.maximum, max exactly matches an element
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(0, 2);
+        Roaring r2 = Roaring::bitmapOf(1, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max > r1.maximum, min does not exactly match an
+        // element
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(3, 5);
+        Roaring r2 = Roaring::bitmapOf(2, 1, 2);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max > r1.maximum, min exactly matches an element
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(2, 5);
+        Roaring r2 = Roaring::bitmapOf(1, 1);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max < r1.maximum, no elements between min and max
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(3, 3);
+        Roaring r2 = Roaring::bitmapOf(3, 1, 2, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // max < r1.minimum
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(0, 0);
+        Roaring r2 = Roaring::bitmapOf(3, 1, 2, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.maximum
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(5, 6);
+        Roaring r2 = Roaring::bitmapOf(3, 1, 2, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > max
+        Roaring r1 = Roaring::bitmapOf(3, 1, 2, 4);
+        r1.removeRangeClosed(2, 1);
+        Roaring r2 = Roaring::bitmapOf(3, 1, 2, 4);
+        assert_true(r1 == r2);
+    }
+}
+
+DEFINE_TEST(test_cpp_add_range_64) {
+    {
+        // 32-bit integers
+        Roaring64Map r1;
+        r1.addRangeClosed(uint32_t(1), uint32_t(5));
+        Roaring64Map r2;
+        for (uint32_t v = 1; v <= 5; ++v) {
+            r2.add(v);
+        }
+        assert_true(r1 == r2);
+    }
+    std::vector<std::pair<uint64_t, uint64_t>> ranges = {
+        {uint64_t(1) << 32, (uint64_t(1) << 32) + 10},
+        {(uint64_t(1) << 32) - 10, (uint64_t(1) << 32) + 10},
+        {(uint64_t(1) << 32) + 2, (uint64_t(1) << 32) - 2}};
+    for (const auto &range : ranges) {
+        uint64_t min = range.first;
+        uint64_t max = range.second;
+        Roaring64Map r1;
+        r1.addRangeClosed(min, max);
+        Roaring64Map r2;
+        for (uint64_t v = min; v <= max; ++v) {
+            r2.add(v);
+        }
+        assert_true(r1 == r2);
+    }
+}
+
+DEFINE_TEST(test_cpp_remove_range_64) {
+    {
+        // 32-bit integers
+        Roaring64Map r1 =
+            Roaring64Map::bitmapOf(3, uint64_t(1), uint64_t(2), uint64_t(4));
+        r1.removeRangeClosed(uint32_t(2), uint32_t(3));
+        Roaring64Map r2 = Roaring64Map::bitmapOf(2, uint64_t(1), uint64_t(4));
+        assert_true(r1 == r2);
+    }
+    {
+        // min < r1.minimum, max > r1.maximum
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(0), uint64_t(5) << 32);
+        assert_true(r1.isEmpty());
+    }
+    {
+        // min < r1.minimum, max < r1.maximum, max does not exactly match an
+        // element
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(0), uint64_t(3) << 32);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(1, uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min < r1.minimum, max < r1.maximum, max exactly matches the high bits
+        // of an element
+        Roaring64Map r1 =
+            Roaring64Map::bitmapOf(4, uint64_t(1) << 32, uint64_t(2) << 32,
+                                   (uint64_t(2) << 32) + 1, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(0), uint64_t(2) << 32);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(2, (uint64_t(2) << 32) + 1,
+                                                 uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max > r1.maximum, min does not exactly match an
+        // element
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(3) << 32, uint64_t(5) << 32);
+        Roaring64Map r2 =
+            Roaring64Map::bitmapOf(2, uint64_t(1) << 32, uint64_t(2) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max > r1.maximum, min exactly matches the high bits
+        // of an element
+        Roaring64Map r1 =
+            Roaring64Map::bitmapOf(4, uint64_t(1) << 32, uint64_t(2) << 32,
+                                   (uint64_t(2) << 32) + 1, uint64_t(4) << 32);
+        r1.removeRangeClosed((uint64_t(2) << 32) + 1, uint64_t(5) << 32);
+        Roaring64Map r2 =
+            Roaring64Map::bitmapOf(2, uint64_t(1) << 32, uint64_t(2) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.minimum, max < r1.maximum, no elements between min and max
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(3) << 32, (uint64_t(3) << 32) + 1);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // max < r1.minimum
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(1), uint64_t(2));
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > r1.maximum
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(5) << 32, uint64_t(6) << 32);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+    {
+        // min > max
+        Roaring64Map r1 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        r1.removeRangeClosed(uint64_t(2) << 32, uint64_t(1) << 32);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            3, uint64_t(1) << 32, uint64_t(2) << 32, uint64_t(4) << 32);
+        assert_true(r1 == r2);
+    }
+}
+
 DEFINE_TEST(test_cpp_clear_64) {
     Roaring64Map roaring;
 
-    uint64_t values64[4] = { 123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL, 0xFFFFFFFFFULL};
+    uint64_t values64[4] = {123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL,
+                            0xFFFFFFFFFULL};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values64[i]));
     }
 
-	roaring.clear();
+    roaring.clear();
 
     assert_true(roaring.isEmpty());
 }
@@ -618,46 +845,48 @@ DEFINE_TEST(test_cpp_clear_64) {
 DEFINE_TEST(test_cpp_move_64) {
     Roaring64Map roaring;
 
-    uint64_t values64[4] = { 123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL, 0xFFFFFFFFFULL};
+    uint64_t values64[4] = {123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL,
+                            0xFFFFFFFFFULL};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values64[i]));
     }
 
-	Roaring64Map::const_iterator i(roaring);
-	i.move(123ULL);
-	assert_true(*i == 123ULL);
-	i.move(0xAFFFFFFF8ULL);
-	assert_true(*i == 0xFFFFFFFFFULL);
-	assert_false(i.move(0xFFFFFFFFFFULL));
+    Roaring64Map::const_iterator i(roaring);
+    i.move(123ULL);
+    assert_true(*i == 123ULL);
+    i.move(0xAFFFFFFF8ULL);
+    assert_true(*i == 0xFFFFFFFFFULL);
+    assert_false(i.move(0xFFFFFFFFFFULL));
 }
 
 DEFINE_TEST(test_cpp_bidirectional_iterator_64) {
     Roaring64Map roaring;
 
-    uint64_t values64[4] = { 123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL, 0xFFFFFFFFFULL};
+    uint64_t values64[4] = {123ULL, 0xA00000000AULL, 0xAFFFFFFF7ULL,
+                            0xFFFFFFFFFULL};
     for (int i = 0; i < 4; ++i) {
         assert_true(roaring.addChecked(values64[i]));
     }
 
-	Roaring64Map::const_bidirectional_iterator i(roaring);
-	i = roaring.begin();
-	assert_true(*i++ == 123ULL);
-	assert_true(*i++ == 0xAFFFFFFF7ULL);
-	assert_true(*i++ == 0xFFFFFFFFFULL);
-	assert_true(*i++ == 0xA00000000AULL);
-	assert_true(i == roaring.end());
-	assert_true(*--i == 0xA00000000AULL);
-	assert_true(*--i == 0xFFFFFFFFFULL);
-	assert_true(*--i == 0xAFFFFFFF7ULL);
-	assert_true(*--i == 123ULL);
-	assert_true(i == roaring.begin());
-	i = roaring.end();
-	i--;
-	assert_true(*i-- == 0xA00000000AULL);
-	assert_true(*i-- == 0xFFFFFFFFFULL);
-	assert_true(*i-- == 0xAFFFFFFF7ULL);
-	assert_true(*i == 123ULL);
-	assert_true(i == roaring.begin());
+    Roaring64Map::const_bidirectional_iterator i(roaring);
+    i = roaring.begin();
+    assert_true(*i++ == 123ULL);
+    assert_true(*i++ == 0xAFFFFFFF7ULL);
+    assert_true(*i++ == 0xFFFFFFFFFULL);
+    assert_true(*i++ == 0xA00000000AULL);
+    assert_true(i == roaring.end());
+    assert_true(*--i == 0xA00000000AULL);
+    assert_true(*--i == 0xFFFFFFFFFULL);
+    assert_true(*--i == 0xAFFFFFFF7ULL);
+    assert_true(*--i == 123ULL);
+    assert_true(i == roaring.begin());
+    i = roaring.end();
+    i--;
+    assert_true(*i-- == 0xA00000000AULL);
+    assert_true(*i-- == 0xFFFFFFFFFULL);
+    assert_true(*i-- == 0xAFFFFFFF7ULL);
+    assert_true(*i == 123ULL);
+    assert_true(i == roaring.begin());
 }
 
 DEFINE_TEST(test_cpp_frozen) {
@@ -685,6 +914,22 @@ DEFINE_TEST(test_cpp_frozen) {
     const Roaring r2 = Roaring::frozenView(buf, num_bytes);
     assert_true(r1 == r2);
 
+    {
+        Roaring r;
+        r.addRange(0, 100000);
+        r.flip(90000, 91000);
+        r.runOptimize();
+
+        // allocate a buffer and serialize to it
+        size_t num_bytes1 = r.getFrozenSizeInBytes();
+        char *buf1 = (char *)roaring_aligned_malloc(32, num_bytes1);
+        r.writeFrozen(buf1);
+
+        // ensure the frozen bitmap is the same as the original
+        const Roaring rr = Roaring::frozenView(buf1, num_bytes1);
+        assert_true(r == rr);
+        roaring_aligned_free(buf1);
+    }
 #if ROARING_EXCEPTIONS
     // try viewing a misaligned/invalid buffer
     try {
@@ -788,12 +1033,156 @@ DEFINE_TEST(test_cpp_frozen_64) {
     roaring_aligned_free(buf);
 }
 
+DEFINE_TEST(test_cpp_flip) {
+    {
+        // nothing is affected outside of the given range
+        Roaring r1 = Roaring::bitmapOf(3, 1, 3, 6);
+        r1.flip(2, 5);
+        Roaring r2 = Roaring::bitmapOf(4, 1, 2, 4, 6);
+        assert_true(r1 == r2);
+    }
+    {
+        // given range can go outside of existing range
+        Roaring r1 = Roaring::bitmapOf(2, 1, 3);
+        r1.flip(0, 5);
+        Roaring r2 = Roaring::bitmapOf(3, 0, 2, 4);
+        assert_true(r1 == r2);
+    }
+    {
+        // range end is exclusive
+        Roaring r1 = Roaring::bitmapOf(2, 1, 3);
+        r1.flip(1, 3);
+        Roaring r2 = Roaring::bitmapOf(2, 2, 3);
+        assert_true(r1 == r2);
+    }
+    {
+        // uint32 max can be flipped
+        Roaring r1 =
+            Roaring::bitmapOf(1, (std::numeric_limits<uint32_t>::max)());
+        r1.flip(
+            (std::numeric_limits<uint32_t>::max)(),
+            static_cast<uint64_t>((std::numeric_limits<uint32_t>::max)()) + 1);
+        assert_true(r1.isEmpty());
+    }
+    {
+        // empty range does nothing
+        Roaring r1 = Roaring::bitmapOf(2, 2, 3);
+        Roaring r2 = r1;
+        r1.flip(2, 2);
+        assert_true(r1 == r2);
+    }
+}
+
+DEFINE_TEST(test_cpp_flip_64) {
+    {
+        // nothing is affected outside of the given range
+        Roaring64Map r1 = Roaring64Map::bitmapOf(3, (((uint64_t)1) << 32) - 3, ((uint64_t)1) << 32,
+                                                 (((uint64_t)1) << 32) + 3);
+        r1.flip((((uint64_t)1) << 32) - 2, (((uint64_t)1) << 32) + 2);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            5, (((uint64_t)1) << 32) - 3, (((uint64_t)1) << 32) - 2, (((uint64_t)1) << 32) - 1,
+            (((uint64_t)1) << 32) + 1, (((uint64_t)1) << 32) + 3);
+        assert_true(r1 == r2);
+    }
+    {
+        // given range can go outside of existing range
+        Roaring64Map r1 = Roaring64Map::bitmapOf(2, (((uint64_t)1) << 32) - 2, ((uint64_t)1) << 32);
+        r1.flip((((uint64_t)1) << 32) - 3, (((uint64_t)1) << 32) + 2);
+        Roaring64Map r2 = Roaring64Map::bitmapOf(
+            3, (((uint64_t)1) << 32) - 3, (((uint64_t)1) << 32) - 1, (((uint64_t)1) << 32) + 1);
+        assert_true(r1 == r2);
+    }
+    {
+        // range end is exclusive
+        Roaring64Map r1 =
+            Roaring64Map::bitmapOf(2, (((uint64_t)2) << 32) - 1, (((uint64_t)2) << 32) + 2);
+        r1.flip((((uint64_t)2) << 32) - 1, (((uint64_t)2) << 32) + 2);
+        Roaring64Map r2;
+        for (uint64_t i = (((uint64_t)2) << 32); i <= (((uint64_t)2) << 32) + 2; ++i) {
+            r2.add(i);
+        }
+        assert_true(r1 == r2);
+    }
+    {
+        // uint32 max can be flipped
+        Roaring64Map r1 =
+            Roaring64Map::bitmapOf(1, static_cast<uint64_t>((std::numeric_limits<uint32_t>::max)()));
+        r1.flip(
+            (std::numeric_limits<uint32_t>::max)(),
+            static_cast<uint64_t>((std::numeric_limits<uint32_t>::max)()) + 1);
+        assert_true(r1.isEmpty());
+    }
+    {
+        // empty range does nothing
+        Roaring64Map r1 = Roaring64Map::bitmapOf(2, (((uint64_t)1) << 32) - 1, ((uint64_t)1) << 32);
+        Roaring64Map r2 = r1;
+        r1.flip((((uint64_t)1) << 32) - 1, (((uint64_t)1) << 32) - 1);
+        assert_true(r1 == r2);
+    }
+}
+
+// Returns true on success, false on exception.
+bool test64Deserialize(const std::string& filename) {
+    std::ifstream in(TEST_DATA_DIR + filename, std::ios::binary);
+    std::vector<char> buf1(std::istreambuf_iterator<char>(in), {});
+    printf("Reading %lu bytes\n", buf1.size());
+    Roaring64Map roaring;
+#if ROARING_EXCEPTIONS
+    try {
+        roaring = Roaring64Map::readSafe(buf1.data(), buf1.size());
+    } catch (...) {
+        return false;
+    }
+#else
+    roaring = Roaring64Map::readSafe(buf1.data(), buf1.size());
+#endif
+    std::vector<char> buf2(roaring.getSizeInBytes());
+    assert_true(buf1.size() == buf2.size());
+    assert_true(roaring.write(buf2.data()) == buf2.size());
+    for (size_t i = 0; i < buf1.size(); ++i) {
+        assert_true(buf1[i] == buf2[i]);
+    }
+    return true;
+}
+
+// The valid files were created with cpp_unit_util.cpp.
+DEFINE_TEST(test_cpp_deserialize_64_empty) {
+  assert_true(test64Deserialize("64mapempty.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_32bit_vals) {
+  assert_true(test64Deserialize("64map32bitvals.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_spread_vals) {
+  assert_true(test64Deserialize("64mapspreadvals.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_high_vals) {
+  assert_true(test64Deserialize("64maphighvals.bin"));
+}
+
+#if ROARING_EXCEPTIONS
+DEFINE_TEST(test_cpp_deserialize_64_empty_input) {
+  assert_false(test64Deserialize("64mapemptyinput.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_size_too_small) {
+  assert_false(test64Deserialize("64mapsizetoosmall.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_invalid_size) {
+  assert_false(test64Deserialize("64mapinvalidsize.bin"));
+}
+
+DEFINE_TEST(test_cpp_deserialize_64_key_too_small) {
+  assert_false(test64Deserialize("64mapkeytoosmall.bin"));
+}
+#endif
+
 int main() {
     roaring::misc::tellmeall();
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(issue316),
-        cmocka_unit_test(test_issue304),
-        cmocka_unit_test(issue_336),
         cmocka_unit_test(serial_test),
         cmocka_unit_test(test_example_true),
         cmocka_unit_test(test_example_false),
@@ -803,16 +1192,36 @@ int main() {
         cmocka_unit_test(test_example_cpp_64_false),
         cmocka_unit_test(test_cpp_add_remove_checked),
         cmocka_unit_test(test_cpp_add_remove_checked_64),
+        cmocka_unit_test(test_cpp_add_range),
+        cmocka_unit_test(test_cpp_remove_range),
+        cmocka_unit_test(test_cpp_add_range_64),
+        cmocka_unit_test(test_cpp_remove_range_64),
         cmocka_unit_test(test_run_compression_cpp_64_true),
         cmocka_unit_test(test_run_compression_cpp_64_false),
         cmocka_unit_test(test_run_compression_cpp_true),
         cmocka_unit_test(test_run_compression_cpp_false),
-		cmocka_unit_test(test_cpp_clear_64),
-		cmocka_unit_test(test_cpp_move_64),
-		cmocka_unit_test(test_roaring64_iterate_multi_roaring),
-		cmocka_unit_test(test_cpp_bidirectional_iterator_64),
-		cmocka_unit_test(test_cpp_frozen),
-		cmocka_unit_test(test_cpp_frozen_64)};
-
+        cmocka_unit_test(test_cpp_clear_64),
+        cmocka_unit_test(test_cpp_move_64),
+        cmocka_unit_test(test_roaring64_iterate_multi_roaring),
+        cmocka_unit_test(test_cpp_bidirectional_iterator_64),
+        cmocka_unit_test(test_cpp_frozen),
+        cmocka_unit_test(test_cpp_frozen_64),
+        cmocka_unit_test(test_cpp_flip),
+        cmocka_unit_test(test_cpp_flip_64),
+        cmocka_unit_test(test_cpp_deserialize_64_empty),
+        cmocka_unit_test(test_cpp_deserialize_64_32bit_vals),
+        cmocka_unit_test(test_cpp_deserialize_64_spread_vals),
+        cmocka_unit_test(test_cpp_deserialize_64_high_vals),
+#if ROARING_EXCEPTIONS
+        cmocka_unit_test(test_cpp_deserialize_64_empty_input),
+        cmocka_unit_test(test_cpp_deserialize_64_size_too_small),
+        cmocka_unit_test(test_cpp_deserialize_64_invalid_size),
+        cmocka_unit_test(test_cpp_deserialize_64_key_too_small),
+#endif
+        cmocka_unit_test(issue316),
+        cmocka_unit_test(test_issue304),
+        cmocka_unit_test(issue_336),
+        cmocka_unit_test(issue_372),
+    };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
