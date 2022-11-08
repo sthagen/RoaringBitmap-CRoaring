@@ -5,7 +5,7 @@
 ########################################################################
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
-timestamp=$(date)  # capture to label files with their generation time
+timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  # capture to label files with their generation time
 
 function newline {
     echo ""
@@ -43,12 +43,12 @@ $SCRIPTPATH/cpp/roaring64map.hh
 "
 
 # internal .h files => These are used in the implementation but aren't part of
-# the API.  They're all embedded at the head of the amalgamated C file, and
+# the API.  They are all embedded at the head of the amalgamated C file, and
 # need to be in this order.
 #
 ALL_PRIVATE_H="
-$SCRIPTPATH/include/roaring/isadetection.h
 $SCRIPTPATH/include/roaring/portability.h
+$SCRIPTPATH/include/roaring/isadetection.h
 $SCRIPTPATH/include/roaring/containers/perfparameters.h
 $SCRIPTPATH/include/roaring/containers/container_defs.h
 $SCRIPTPATH/include/roaring/array_util.h
