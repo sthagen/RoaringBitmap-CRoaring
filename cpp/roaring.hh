@@ -7,6 +7,7 @@ A C++ header for Roaring Bitmaps.
 #include <cstdarg>
 
 #include <algorithm>
+#include <initializer_list>
 #include <new>
 #include <stdexcept>
 #include <string>
@@ -55,10 +56,17 @@ public:
     }
 
     /**
-     * Construct a bitmap from a list of integer values.
+     * Construct a bitmap from a list of 32-bit integer values.
      */
     Roaring(size_t n, const uint32_t *data) : Roaring() {
         api::roaring_bitmap_add_many(&roaring, n, data);
+    }
+
+    /**
+     * Construct a bitmap from an initializer list.
+     */
+    Roaring(std::initializer_list<uint32_t> l) : Roaring() {
+        addMany(l.size(), l.begin());
     }
 
     /**
@@ -74,8 +82,8 @@ public:
     }
 
     /**
-     * Move constructor. The moved object remains valid, i.e.
-     * all methods can still be called on it.
+     * Move constructor. The moved-from object remains valid but empty, i.e.
+     * it behaves as though it was just freshly constructed.
      */
     Roaring(Roaring &&r) noexcept : roaring(r.roaring) {
         //
@@ -99,7 +107,7 @@ public:
     }
 
     /**
-     * Construct a bitmap from a list of integer values.
+     * Construct a bitmap from a list of uint32_t values.
      */
     static Roaring bitmapOf(size_t n, ...) {
         Roaring ans;
@@ -109,6 +117,16 @@ public:
             ans.add(va_arg(vl, uint32_t));
         }
         va_end(vl);
+        return ans;
+    }
+
+    /**
+     * Construct a bitmap from a list of uint32_t values.
+     * E.g., bitmapOfList({1,2,3}).
+     */
+    static Roaring bitmapOfList(std::initializer_list<uint32_t> l) {
+        Roaring ans;
+        ans.addMany(l.size(), l.begin());
         return ans;
     }
 
@@ -250,6 +268,15 @@ public:
     }
 
     /**
+     * Assignment from an initializer list.
+     */
+    Roaring &operator=(std::initializer_list<uint32_t> l) {
+        // Delegate to move assignment operator
+        *this = Roaring(l);
+        return *this;
+    }
+
+    /**
      * Compute the intersection between the current bitmap and the provided
      * bitmap, writing the result in the current bitmap. The provided bitmap
      * is not modified.
@@ -345,12 +372,20 @@ public:
     }
 
     /**
-     * Compute the negation of the roaring bitmap within a specified interval.
-     * interval: [range_start, range_end).
-     * Areas outside the range are passed through unchanged.
+     * Compute the negation of the roaring bitmap within the half-open interval
+     * [range_start, range_end). Areas outside the interval are unchanged.
      */
     void flip(uint64_t range_start, uint64_t range_end) {
         api::roaring_bitmap_flip_inplace(&roaring, range_start, range_end);
+    }
+
+    /**
+     * Compute the negation of the roaring bitmap within the closed interval
+     * [range_start, range_end]. Areas outside the interval are unchanged.
+     */
+    void flipClosed(uint32_t range_start, uint32_t range_end) {
+        api::roaring_bitmap_flip_inplace(
+            &roaring, range_start, uint64_t(range_end) + 1);
     }
 
     /**

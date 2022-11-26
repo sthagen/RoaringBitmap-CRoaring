@@ -1,6 +1,10 @@
-/*
-A C++ header for 64-bit Roaring Bitmaps, implemented by way of a map of many
-32-bit Roaring Bitmaps.
+/**
+ * A C++ header for 64-bit Roaring Bitmaps, 
+ * implemented by way of a map of many
+ * 32-bit Roaring Bitmaps.
+ * 
+ * Reference (format specification) :
+ * https://github.com/RoaringBitmap/RoaringFormatSpec#extention-for-64-bit-implementations
 */
 #ifndef INCLUDE_ROARING_64_MAP_HH_
 #define INCLUDE_ROARING_64_MAP_HH_
@@ -11,10 +15,12 @@ A C++ header for 64-bit Roaring Bitmaps, implemented by way of a map of many
 #include <cstdio>  // for std::printf() in the printf() method
 #include <cstring>  // for std::memcpy()
 #include <functional>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <new>
 #include <numeric>
+#include <queue>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -48,6 +54,13 @@ public:
     Roaring64Map(size_t n, const uint64_t *data) { addMany(n, data); }
 
     /**
+     * Construct a bitmap from an initializer list.
+     */
+    Roaring64Map(std::initializer_list<uint64_t> l) {
+        addMany(l.size(), l.begin());
+    }
+
+    /**
      * Construct a 64-bit map from a 32-bit one
      */
     explicit Roaring64Map(const Roaring &r) { emplaceOrInsert(0, r); }
@@ -78,10 +91,19 @@ public:
     /**
      * Move assignment operator.
      */
-     Roaring64Map &operator=(Roaring64Map &&r) noexcept = default;
+    Roaring64Map &operator=(Roaring64Map &&r) noexcept = default;
 
     /**
-     * Construct a bitmap from a list of integer values.
+     * Assignment from an initializer list.
+     */
+    Roaring64Map &operator=(std::initializer_list<uint64_t> l) {
+        // Delegate to move assignment operator
+        *this = Roaring64Map(l);
+        return *this;
+    }
+
+    /**
+     * Construct a bitmap from a list of uint64_t values.
      */
     static Roaring64Map bitmapOf(size_t n...) {
         Roaring64Map ans;
@@ -95,34 +117,49 @@ public:
     }
 
     /**
-     * Add value x
+     * Construct a bitmap from a list of uint64_t values.
+     * E.g., bitmapOfList({1,2,3}).
+     */
+    static Roaring64Map bitmapOfList(std::initializer_list<uint64_t> l) {
+        Roaring64Map ans;
+        ans.addMany(l.size(), l.begin());
+        return ans;
+    }
+
+    /**
+     * Adds value x.
      */
     void add(uint32_t x) {
-        roarings[0].add(x);
-        roarings[0].setCopyOnWrite(copyOnWrite);
-    }
-    void add(uint64_t x) {
-        roarings[highBytes(x)].add(lowBytes(x));
-        roarings[highBytes(x)].setCopyOnWrite(copyOnWrite);
+        lookupOrCreateInner(0).add(x);
     }
 
     /**
-     * Add value x
-     * Returns true if a new value was added, false if the value was already existing.
+     * Adds value x.
+     */
+    void add(uint64_t x) {
+        lookupOrCreateInner(highBytes(x)).add(lowBytes(x));
+    }
+
+    /**
+     * Adds value x.
+     * Returns true if a new value was added, false if the value was already
+     * present.
      */
     bool addChecked(uint32_t x) {
-        bool result = roarings[0].addChecked(x);
-        roarings[0].setCopyOnWrite(copyOnWrite);
-        return result;
-    }
-    bool addChecked(uint64_t x) {
-        bool result = roarings[highBytes(x)].addChecked(lowBytes(x));
-        roarings[highBytes(x)].setCopyOnWrite(copyOnWrite);
-        return result;
+        return lookupOrCreateInner(0).addChecked(x);
     }
 
     /**
-     * Add all values in range [min, max)
+     * Adds value x.
+     * Returns true if a new value was added, false if the value was already
+     * present.
+     */
+    bool addChecked(uint64_t x) {
+        return lookupOrCreateInner(highBytes(x)).addChecked(lowBytes(x));
+    }
+
+    /**
+     * Adds all values in the half-open interval [min, max).
      */
     void addRange(uint64_t min, uint64_t max) {
         if (min >= max) {
@@ -132,11 +169,15 @@ public:
     }
 
     /**
-     * Add all values in range [min, max]
+     * Adds all values in the closed interval [min, max].
      */
     void addRangeClosed(uint32_t min, uint32_t max) {
-        roarings[0].addRangeClosed(min, max);
+        lookupOrCreateInner(0).addRangeClosed(min, max);
     }
+
+    /**
+     * Adds all values in the closed interval [min, max]
+     */
     void addRangeClosed(uint64_t min, uint64_t max) {
         if (min > max) {
             return;
@@ -145,41 +186,83 @@ public:
         uint32_t start_low = lowBytes(min);
         uint32_t end_high = highBytes(max);
         uint32_t end_low = lowBytes(max);
+
+        // We put std::numeric_limits<>::max in parentheses to avoid a
+        // clash with the Windows.h header under Windows.
+        const uint32_t uint32_max = (std::numeric_limits<uint32_t>::max)();
+
+        // Fill in any nonexistent slots with empty Roarings. This simplifies
+        // the logic below, allowing it to simply iterate over the map between
+        // 'start_high' and 'end_high' in a linear fashion.
+        auto current_iter = ensureRangePopulated(start_high, end_high);
+
+        // If start and end land on the same inner bitmap, then we can do the
+        // whole operation in one call.
         if (start_high == end_high) {
-            roarings[start_high].addRangeClosed(start_low, end_low);
-            roarings[start_high].setCopyOnWrite(copyOnWrite);
+            auto &bitmap = current_iter->second;
+            bitmap.addRangeClosed(start_low, end_low);
             return;
         }
-        // we put std::numeric_limits<>::max/min in parenthesis to avoid a clash
-        // with the Windows.h header under Windows
-        roarings[start_high].addRangeClosed(
-            start_low, (std::numeric_limits<uint32_t>::max)());
-        roarings[start_high].setCopyOnWrite(copyOnWrite);
-        start_high++;
-        for (; start_high < end_high; ++start_high) {
-            roarings[start_high].addRangeClosed(
-                (std::numeric_limits<uint32_t>::min)(),
-                (std::numeric_limits<uint32_t>::max)());
-            roarings[start_high].setCopyOnWrite(copyOnWrite);
+
+        // Because start and end don't land on the same inner bitmap,
+        // we need to do this in multiple steps:
+        // 1. Partially fill the first bitmap with values from the closed
+        //    interval [start_low, uint32_max]
+        // 2. Fill intermediate bitmaps completely: [0, uint32_max]
+        // 3. Partially fill the last bitmap with values from the closed
+        //    interval [0, end_low]
+        auto num_intermediate_bitmaps = end_high - start_high - 1;
+
+        // Step 1: Partially fill the first bitmap.
+        {
+            auto &bitmap = current_iter->second;
+            bitmap.addRangeClosed(start_low, uint32_max);
+            ++current_iter;
         }
-        roarings[end_high].addRangeClosed(
-            (std::numeric_limits<uint32_t>::min)(), end_low);
-        roarings[end_high].setCopyOnWrite(copyOnWrite);
+
+        // Step 2. Fill intermediate bitmaps completely.
+        if (num_intermediate_bitmaps != 0) {
+            auto &first_intermediate = current_iter->second;
+            first_intermediate.addRangeClosed(0, uint32_max);
+            ++current_iter;
+
+            // Now make (num_intermediate_bitmaps - 1) copies of this.
+            for (uint32_t i = 1; i != num_intermediate_bitmaps; ++i) {
+                auto &next_intermediate = current_iter->second;
+                next_intermediate = first_intermediate;
+                ++current_iter;
+            }
+        }
+
+        // Step 3: Partially fill the last bitmap.
+        auto &bitmap = current_iter->second;
+        bitmap.addRangeClosed(0, end_low);
     }
 
     /**
-     * Add value n_args from pointer vals
+     * Adds 'n_args' values from the contiguous memory range starting at 'vals'.
      */
     void addMany(size_t n_args, const uint32_t *vals) {
-        Roaring &roaring = roarings[0];
-        roaring.addMany(n_args, vals);
-        roaring.setCopyOnWrite(copyOnWrite);
+        lookupOrCreateInner(0).addMany(n_args, vals);
     }
 
+    /**
+     * Adds 'n_args' values from the contiguous memory range starting at 'vals'.
+     */
     void addMany(size_t n_args, const uint64_t *vals) {
+        // Potentially reduce outer map lookups by optimistically
+        // assuming that adjacent values will belong to the same inner bitmap.
+        Roaring *last_inner_bitmap = nullptr;
+        uint32_t last_value_high = 0;
         for (size_t lcv = 0; lcv < n_args; lcv++) {
-            roarings[highBytes(vals[lcv])].add(lowBytes(vals[lcv]));
-            roarings[highBytes(vals[lcv])].setCopyOnWrite(copyOnWrite);
+            auto value = vals[lcv];
+            auto value_high = highBytes(value);
+            auto value_low = lowBytes(value);
+            if (last_inner_bitmap == nullptr || value_high != last_value_high) {
+                last_inner_bitmap = &lookupOrCreateInner(value_high);
+                last_value_high = value_high;
+            }
+            last_inner_bitmap->add(value_low);
         }
     }
 
@@ -794,39 +877,98 @@ public:
     }
 
     /**
-     * Compute the negation of the roaring bitmap within a specified interval.
-     * areas outside the range are passed through unchanged.
+     * Computes the negation of the roaring bitmap within the half-open interval
+     * [min, max). Areas outside the interval are unchanged.
      */
-    void flip(uint64_t range_start, uint64_t range_end) {
-        if (range_start >= range_end) {
-          return;
-        }
-        uint32_t start_high = highBytes(range_start);
-        uint32_t start_low = lowBytes(range_start);
-        uint32_t end_high = highBytes(range_end);
-        uint32_t end_low = lowBytes(range_end);
-
-        if (start_high == end_high) {
-            roarings[start_high].flip(start_low, end_low);
+    void flip(uint64_t min, uint64_t max) {
+        if (min >= max) {
             return;
         }
-        // we put std::numeric_limits<>::max/min in parentheses
-        // to avoid a clash with the Windows.h header under Windows
-        // flip operates on the range [lower_bound, upper_bound)
-        const uint64_t max_upper_bound =
-            static_cast<uint64_t>((std::numeric_limits<uint32_t>::max)()) + 1;
-        roarings[start_high].flip(start_low, max_upper_bound);
-        roarings[start_high++].setCopyOnWrite(copyOnWrite);
+        flipClosed(min, max - 1);
+    }
 
-        for (; start_high <= highBytes(range_end) - 1; ++start_high) {
-            roarings[start_high].flip((std::numeric_limits<uint32_t>::min)(),
-                                      max_upper_bound);
-            roarings[start_high].setCopyOnWrite(copyOnWrite);
+    /**
+     * Computes the negation of the roaring bitmap within the closed interval
+     * [min, max]. Areas outside the interval are unchanged.
+     */
+    void flipClosed(uint32_t min, uint32_t max) {
+        auto iter = roarings.begin();
+        // Since min and max are uint32_t, highbytes(min or max) == 0. The inner
+        // bitmap we are looking for, if it exists, will be at the first slot of
+        // 'roarings'. If it does not exist, we have to create it.
+        if (iter == roarings.end() || iter->first != 0) {
+            iter = roarings.emplace_hint(iter, std::piecewise_construct,
+                                         std::forward_as_tuple(0),
+                                         std::forward_as_tuple());
+            auto &bitmap = iter->second;
+            bitmap.setCopyOnWrite(copyOnWrite);
+        }
+        auto &bitmap = iter->second;
+        bitmap.flipClosed(min, max);
+        eraseIfEmpty(iter);
+    }
+
+    /**
+     * Computes the negation of the roaring bitmap within the closed interval
+     * [min, max]. Areas outside the interval are unchanged.
+     */
+    void flipClosed(uint64_t min, uint64_t max) {
+        if (min > max) {
+          return;
+        }
+        uint32_t start_high = highBytes(min);
+        uint32_t start_low = lowBytes(min);
+        uint32_t end_high = highBytes(max);
+        uint32_t end_low = lowBytes(max);
+
+        // We put std::numeric_limits<>::max in parentheses to avoid a
+        // clash with the Windows.h header under Windows.
+        const uint32_t uint32_max = (std::numeric_limits<uint32_t>::max)();
+
+        // Fill in any nonexistent slots with empty Roarings. This simplifies
+        // the logic below, allowing it to simply iterate over the map between
+        // 'start_high' and 'end_high' in a linear fashion.
+        auto current_iter = ensureRangePopulated(start_high, end_high);
+
+        // If start and end land on the same inner bitmap, then we can do the
+        // whole operation in one call.
+        if (start_high == end_high) {
+            auto &bitmap = current_iter->second;
+            bitmap.flipClosed(start_low, end_low);
+            eraseIfEmpty(current_iter);
+            return;
         }
 
-        roarings[start_high].flip((std::numeric_limits<uint32_t>::min)(),
-                                  end_low);
-        roarings[start_high].setCopyOnWrite(copyOnWrite);
+        // Because start and end don't land on the same inner bitmap,
+        // we need to do this in multiple steps:
+        // 1. Partially flip the first bitmap in the closed interval
+        //    [start_low, uint32_max]
+        // 2. Flip intermediate bitmaps completely: [0, uint32_max]
+        // 3. Partially flip the last bitmap in the closed interval
+        //    [0, end_low]
+
+        auto num_intermediate_bitmaps = end_high - start_high - 1;
+
+        // 1. Partially flip the first bitmap.
+        {
+            auto &bitmap = current_iter->second;
+            bitmap.flipClosed(start_low, uint32_max);
+            auto temp = current_iter++;
+            eraseIfEmpty(temp);
+        }
+
+        // 2. Flip intermediate bitmaps completely.
+        for (uint32_t i = 0; i != num_intermediate_bitmaps; ++i) {
+            auto &bitmap = current_iter->second;
+            bitmap.flipClosed(0, uint32_max);
+            auto temp = current_iter++;
+            eraseIfEmpty(temp);
+        }
+
+        // 3. Partially flip the last bitmap.
+        auto &bitmap = current_iter->second;
+        bitmap.flipClosed(0, end_low);
+        eraseIfEmpty(current_iter);
     }
 
     /**
@@ -1237,12 +1379,124 @@ public:
      * pointer).
      */
     static Roaring64Map fastunion(size_t n, const Roaring64Map **inputs) {
-        Roaring64Map ans;
-        // not particularly fast
-        for (size_t lcv = 0; lcv < n; ++lcv) {
-            ans |= *(inputs[lcv]);
+        // The strategy here is to basically do a "group by" operation.
+        // We group the input roarings by key, do a 32-bit
+        // roaring_bitmap_or_many on each group, and collect the results.
+        // We accomplish the "group by" operation using a priority queue, which
+        // tracks the next key for each of our input maps. At each step, our
+        // algorithm takes the next subset of maps that share the same next key,
+        // runs roaring_bitmap_or_many on those bitmaps, and then advances the
+        // current_iter on all the affected entries and then repeats.
+
+        // There is an entry in our priority queue for each of the 'n' inputs.
+        // For a given Roaring64Map, we look at its underlying 'roarings'
+        // std::map, and take its begin() and end(). This forms our half-open
+        // interval [current_iter, end_iter), which we keep in the priority
+        // queue as a pq_entry. These entries are updated (removed and then
+        // reinserted with the pq_entry.iterator field advanced by one step) as
+        // our algorithm progresses. But when a given interval becomes empty
+        // (i.e. pq_entry.iterator == pq_entry.end) it is not returned to the
+        // priority queue.
+        struct pq_entry {
+            roarings_t::const_iterator iterator;
+            roarings_t::const_iterator end;
+        };
+
+        // Custom comparator for the priority queue.
+        auto pq_comp = [](const pq_entry &lhs, const pq_entry &rhs) {
+            auto left_key = lhs.iterator->first;
+            auto right_key = rhs.iterator->first;
+
+            // We compare in the opposite direction than normal because priority
+            // queues normally order from largest to smallest, but we want
+            // smallest to largest.
+            return left_key > right_key;
+        };
+
+        // Create and populate the priority queue.
+        std::priority_queue<pq_entry, std::vector<pq_entry>, decltype(pq_comp)> pq(pq_comp);
+        for (size_t i = 0; i < n; ++i) {
+            const auto &roarings = inputs[i]->roarings;
+            if (roarings.begin() != roarings.end()) {
+                pq.push({roarings.begin(), roarings.end()});
+            }
         }
-        return ans;
+
+        // A reusable vector that holds the pointers to the inner bitmaps that
+        // we pass to the underlying 32-bit fastunion operation.
+        std::vector<const roaring_bitmap_t*> group_bitmaps;
+
+        // Summary of the algorithm:
+        // 1. While the priority queue is not empty:
+        //    A. Get its lowest key. Call this group_key
+        //    B. While the lowest entry in the priority queue has a key equal to
+        //       group_key:
+        //       1. Remove this entry (the pair {current_iter, end_iter}) from
+        //          the priority queue.
+        //       2. Add the bitmap pointed to by current_iter to a list of
+        //          32-bit bitmaps to process.
+        //       3. Advance current_iter. Now it will point to a bitmap entry
+        //          with some key greater than group_key (or it will point to
+        //          end()).
+        //       4. If current_iter != end_iter, reinsert the pair into the
+        //          priority queue.
+        //    C. Invoke the 32-bit roaring_bitmap_or_many() and add to result
+        Roaring64Map result;
+        while (!pq.empty()) {
+            // Find the next key (the lowest key) in the priority queue.
+            auto group_key = pq.top().iterator->first;
+
+            // The purpose of the inner loop is to gather all the inner bitmaps
+            // that share "group_key" into "group_bitmaps" so that they can be
+            // fed to roaring_bitmap_or_many(). While we are doing this, we
+            // advance those iterators to their next value and reinsert them
+            // into the priority queue (unless they reach their end).
+            group_bitmaps.clear();
+            while (!pq.empty()) {
+                auto candidate_current_iter = pq.top().iterator;
+                auto candidate_end_iter = pq.top().end;
+
+                auto candidate_key = candidate_current_iter->first;
+                const auto &candidate_bitmap = candidate_current_iter->second;
+
+                // This element will either be in the group (having
+                // key == group_key) or it will not be in the group (having
+                // key > group_key). (Note it cannot have key < group_key
+                // because of the ordered nature of the priority queue itself
+                // and the ordered nature of all the underlying roaring maps).
+                if (candidate_key != group_key) {
+                    // This entry, and (thanks to the nature of the priority
+                    // queue) all other entries as well, are all greater than
+                    // group_key, so we're done collecting elements for the
+                    // current group. Because of the way this loop was written,
+                    // the group will will always contain at least one element.
+                    break;
+                }
+
+                group_bitmaps.push_back(&candidate_bitmap.roaring);
+                // Remove this entry from the priority queue. Note this
+                // invalidates pq.top() so make sure you don't have any dangling
+                // references to it.
+                pq.pop();
+
+                // Advance 'candidate_current_iter' and insert a new entry
+                // {candidate_current_iter, candidate_end_iter} into the
+                // priority queue (unless it has reached its end).
+                ++candidate_current_iter;
+                if (candidate_current_iter != candidate_end_iter) {
+                    pq.push({candidate_current_iter, candidate_end_iter});
+                }
+            }
+
+            // Use the fast inner union to combine these.
+            auto *inner_result = roaring_bitmap_or_many(group_bitmaps.size(),
+                group_bitmaps.data());
+            // Insert the 32-bit result at end of the 'roarings' map of the
+            // result we are building.
+            result.roarings.insert(result.roarings.end(),
+                std::make_pair(group_key, Roaring(inner_result)));
+        }
+        return result;
     }
 
     friend class Roaring64MapSetBitForwardIterator;
@@ -1295,6 +1549,17 @@ private:
 #endif
     }
 
+    /*
+     * Look up 'key' in the 'roarings' map. If it does not exist, create it.
+     * Also, set its copyOnWrite flag to 'copyOnWrite'. Then return a reference
+     * to the (already existing or newly created) inner bitmap.
+     */
+    Roaring &lookupOrCreateInner(uint32_t key) {
+        auto &bitmap = roarings[key];
+        bitmap.setCopyOnWrite(copyOnWrite);
+        return bitmap;
+    }
+
     /**
      * Prints the contents of the bitmap to a caller-provided sink function.
      */
@@ -1320,6 +1585,53 @@ private:
             }
         }
         sink("}");
+    }
+
+    /**
+     * Ensures that every key in the closed interval [start_high, end_high]
+     * refers to a Roaring bitmap rather being an empty slot. Inserts empty
+     * Roaring bitmaps if necessary. The interval must be valid and non-empty.
+     * Returns an iterator to the bitmap at start_high.
+     */
+    roarings_t::iterator ensureRangePopulated(uint32_t start_high,
+                                              uint32_t end_high) {
+        if (start_high > end_high) {
+            ROARING_TERMINATE("Logic error: start_high > end_high");
+        }
+        // next_populated_iter points to the first entry in the outer map with
+        // key >= start_high, or end().
+        auto next_populated_iter = roarings.lower_bound(start_high);
+
+        // Use uint64_t to avoid an infinite loop when end_high == uint32_max.
+        roarings_t::iterator start_iter{};  // Definitely assigned in loop.
+        for (uint64_t slot = start_high; slot <= end_high; ++slot) {
+            roarings_t::iterator slot_iter;
+            if (next_populated_iter != roarings.end() &&
+                next_populated_iter->first == slot) {
+                // 'slot' index has caught up to next_populated_iter.
+                // Note it here and advance next_populated_iter.
+                slot_iter = next_populated_iter++;
+            } else {
+                // 'slot' index has not yet caught up to next_populated_iter.
+                // Make a fresh entry {key = 'slot', value = Roaring()}, insert
+                // it just prior to next_populated_iter, and set its copy
+                // on write flag. We take pains to use emplace_hint and
+                // piecewise_construct to minimize effort.
+                slot_iter = roarings.emplace_hint(
+                    next_populated_iter, std::piecewise_construct,
+                    std::forward_as_tuple(uint32_t(slot)),
+                    std::forward_as_tuple());
+                auto &bitmap = slot_iter->second;
+                bitmap.setCopyOnWrite(copyOnWrite);
+            }
+
+            // Make a note of the iterator of the starting slot. It will be
+            // needed for the return value.
+            if (slot == start_high) {
+                start_iter = slot_iter;
+            }
+        }
+        return start_iter;
     }
 
     /**
