@@ -163,6 +163,7 @@ bool check_serialization(roaring_bitmap_t *bitmap) {
     return ret;
 }
 
+#if !CROARING_IS_BIG_ENDIAN
 DEFINE_TEST(issue245) {
     roaring_bitmap_t *bitmap = roaring_bitmap_create();
     const uint32_t targetEntries = 2048;
@@ -191,6 +192,7 @@ DEFINE_TEST(issue245) {
     }
     roaring_bitmap_free(bitmap);
 }
+#endif
 
 DEFINE_TEST(issue208) {
     roaring_bitmap_t *r = roaring_bitmap_create();
@@ -4245,6 +4247,99 @@ DEFINE_TEST(test_frozen_serialization_max_containers) {
     frozen_serialization_compare(r);
 }
 
+DEFINE_TEST(test_portable_deserialize_frozen) {
+    roaring_bitmap_t *r1 =
+        roaring_bitmap_of(8, 1, 2, 3, 100, 1000, 10000, 1000000, 20000000);
+    assert_non_null(r1);
+
+    uint32_t serialize_len;
+    roaring_bitmap_t *r2;
+
+    for (int i = 0, top_val = 384000; i < top_val; i++)
+        roaring_bitmap_add(r1, 3 * i);
+
+    uint32_t expectedsize = roaring_bitmap_portable_size_in_bytes(r1);
+    char *serialized = (char*)malloc(expectedsize);
+    serialize_len = roaring_bitmap_portable_serialize(r1, serialized);
+    assert_int_equal(serialize_len, expectedsize);
+    r2 = roaring_bitmap_portable_deserialize_frozen(serialized);
+    assert_non_null(r2);
+
+    uint64_t card1 = roaring_bitmap_get_cardinality(r1);
+    uint32_t *arr1 = (uint32_t *)malloc(card1 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r1, arr1);
+
+    uint64_t card2 = roaring_bitmap_get_cardinality(r2);
+    uint32_t *arr2 = (uint32_t *)malloc(card2 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r2, arr2);
+
+    assert_true(array_equals(arr1, card1, arr2, card2));
+    assert_true(roaring_bitmap_equals(r1, r2));
+    free(arr1);
+    free(arr2);
+    free(serialized);
+    roaring_bitmap_free(r1);
+    roaring_bitmap_free(r2);
+
+    r1 = roaring_bitmap_of(6, 2946000, 2997491, 10478289, 10490227, 10502444,
+                           19866827);
+    expectedsize = roaring_bitmap_portable_size_in_bytes(r1);
+    serialized = (char*)malloc(expectedsize);
+    serialize_len = roaring_bitmap_portable_serialize(r1, serialized);
+    assert_int_equal(serialize_len, expectedsize);
+    assert_int_equal(serialize_len, expectedsize);
+
+    r2 = roaring_bitmap_portable_deserialize_frozen(serialized);
+    assert_non_null(r2);
+
+    card1 = roaring_bitmap_get_cardinality(r1);
+    arr1 = (uint32_t *)malloc(card1 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r1, arr1);
+
+    card2 = roaring_bitmap_get_cardinality(r2);
+    arr2 = (uint32_t *)malloc(card2 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r2, arr2);
+
+    assert_true(array_equals(arr1, card1, arr2, card2));
+    assert_true(roaring_bitmap_equals(r1, r2));
+    free(arr1);
+    free(arr2);
+    roaring_bitmap_free(r1);
+    roaring_bitmap_free(r2);
+    free(serialized);
+
+    r1 = roaring_bitmap_create();
+    assert_non_null(r1);
+
+    for (uint32_t k = 100; k < 100000; ++k) {
+        roaring_bitmap_add(r1, k);
+    }
+
+    roaring_bitmap_run_optimize(r1);
+    expectedsize = roaring_bitmap_portable_size_in_bytes(r1);
+    serialized = (char*)malloc(expectedsize);
+    serialize_len = roaring_bitmap_portable_serialize(r1, serialized);
+    assert_int_equal(serialize_len, expectedsize);
+
+    r2 = roaring_bitmap_portable_deserialize_frozen(serialized);
+    assert_non_null(r2);
+
+    card1 = roaring_bitmap_get_cardinality(r1);
+    arr1 = (uint32_t *)malloc(card1 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r1, arr1);
+
+    card2 = roaring_bitmap_get_cardinality(r2);
+    arr2 = (uint32_t *)malloc(card2 * sizeof(uint32_t));
+    roaring_bitmap_to_uint32_array(r2, arr2);
+
+    assert_true(array_equals(arr1, card1, arr2, card2));
+    assert_true(roaring_bitmap_equals(r1, r2));
+    free(arr1);
+    free(arr2);
+    roaring_bitmap_free(r1);
+    roaring_bitmap_free(r2);
+    free(serialized);
+}
 
 int main() {
     tellmeall();
@@ -4253,7 +4348,9 @@ int main() {
         cmocka_unit_test(test_contains_range_PyRoaringBitMap_issue81),
         cmocka_unit_test(issue316),
         cmocka_unit_test(issue288),
+#if !CROARING_IS_BIG_ENDIAN
         cmocka_unit_test(issue245),
+#endif
         cmocka_unit_test(issue208),
         cmocka_unit_test(issue208b),
         cmocka_unit_test(range_contains),
@@ -4271,8 +4368,10 @@ int main() {
         cmocka_unit_test(test_stress_memory_false),
         cmocka_unit_test(check_interval),
         cmocka_unit_test(test_uint32_iterator_true),
+#if !CROARING_IS_BIG_ENDIAN
         cmocka_unit_test(test_example_true),
         cmocka_unit_test(test_example_false),
+#endif
         cmocka_unit_test(test_clear),
         cmocka_unit_test(can_copy_empty_true),
         cmocka_unit_test(can_copy_empty_false),
@@ -4302,8 +4401,10 @@ int main() {
         cmocka_unit_test(test_iterate_empty),
         cmocka_unit_test(test_iterate_withbitmap),
         cmocka_unit_test(test_iterate_withrun),
+#if !CROARING_IS_BIG_ENDIAN
         cmocka_unit_test(test_serialize),
         cmocka_unit_test(test_portable_serialize),
+#endif
         cmocka_unit_test(test_add),
         cmocka_unit_test(test_add_checked),
         cmocka_unit_test(test_remove_checked),
@@ -4376,8 +4477,11 @@ int main() {
         cmocka_unit_test(test_remove_range),
         cmocka_unit_test(test_remove_many),
         cmocka_unit_test(test_range_cardinality),
+#if !CROARING_IS_BIG_ENDIAN
         cmocka_unit_test(test_frozen_serialization),
         cmocka_unit_test(test_frozen_serialization_max_containers),
+        cmocka_unit_test(test_portable_deserialize_frozen),
+#endif
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
