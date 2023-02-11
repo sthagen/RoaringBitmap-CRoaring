@@ -1179,7 +1179,7 @@ static inline container_t *container_lazy_or(
                                 CAST_run(result));
             *result_type = RUN_CONTAINER_TYPE;
             // we are being lazy
-            result = convert_run_to_efficient_container(
+            result = convert_run_to_efficient_container_and_free(
                 CAST_run(result), result_type);
             return result;
 
@@ -2430,7 +2430,7 @@ static inline container_t *container_remove_range(
 
             if (result_cardinality == 0) {
                 return NULL;
-            } else if (result_cardinality < DEFAULT_MAX_SIZE) {
+            } else if (result_cardinality <= DEFAULT_MAX_SIZE) {
                 *result_type = ARRAY_CONTAINER_TYPE;
                 bitset_reset_range(bitset->words, min, max+1);
                 bitset->cardinality = result_cardinality;

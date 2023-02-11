@@ -47,6 +47,46 @@ bool roaring_iterator_sumall(uint32_t value, void *param) {
     return true;  // continue till the end
 }
 
+DEFINE_TEST(issue429) {
+  // This is a memory leak test, so we don't need to check the results.
+  roaring_bitmap_t *b1 = roaring_bitmap_create();
+  roaring_bitmap_add_range(b1, 0, 100);
+  roaring_bitmap_remove_range(b1, 0, 99);
+  roaring_bitmap_t *b2 = roaring_bitmap_copy(b1);
+  const roaring_bitmap_t *bitmaps[] = {b1, b2};
+  roaring_bitmap_t *result = roaring_bitmap_or_many_heap(2, bitmaps);
+  roaring_bitmap_free(result);
+  roaring_bitmap_free(b2);
+  roaring_bitmap_free(b1);
+}
+
+
+DEFINE_TEST(issue431) {
+  // This is a memory access test, so we don't need to check the results.
+  roaring_bitmap_t *b1 = roaring_bitmap_create();
+  roaring_bitmap_add(b1, 100);
+  roaring_bitmap_flip_inplace(b1, 0, 100 + 1);
+  roaring_bitmap_t *b2 = roaring_bitmap_create();
+  roaring_bitmap_add_range(b2, 50, 100 + 1);
+  roaring_bitmap_is_subset(b2, b1);
+  roaring_bitmap_free(b2);
+  roaring_bitmap_free(b1);
+}
+
+DEFINE_TEST(issue433) {
+  roaring_bitmap_t *b1 = roaring_bitmap_create();
+  roaring_bitmap_add(b1, 262143);
+  roaring_bitmap_add_range_closed(b1, 258047, 262143);
+  roaring_bitmap_remove_range_closed(b1, 262143, 262143);
+  size_t len = roaring_bitmap_portable_size_in_bytes(b1);
+  char *data = roaring_malloc(len);
+  roaring_bitmap_portable_serialize(b1, data);
+  roaring_bitmap_t *b2 = roaring_bitmap_portable_deserialize_safe(data, len);
+  assert_true(roaring_bitmap_equals(b1, b2));
+  roaring_bitmap_free(b2);
+  roaring_bitmap_free(b1);
+  roaring_free(data);
+}
 
 DEFINE_TEST(range_contains) {
     uint32_t end = 2073952257;
@@ -4345,6 +4385,9 @@ int main() {
     tellmeall();
 
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(issue433),
+        cmocka_unit_test(issue429),
+        cmocka_unit_test(issue431),
         cmocka_unit_test(test_contains_range_PyRoaringBitMap_issue81),
         cmocka_unit_test(issue316),
         cmocka_unit_test(issue288),
