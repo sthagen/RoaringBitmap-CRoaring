@@ -46,6 +46,17 @@ bool roaring_iterator_sumall(uint32_t value, void *param) {
     *(uint32_t *)param += value;
     return true;  // continue till the end
 }
+DEFINE_TEST(issue457) {
+  roaring_bitmap_t *r1 = roaring_bitmap_from_range(65539, 65541, 1);
+  roaring_bitmap_printf_describe(r1);
+  assert_true(roaring_bitmap_get_cardinality(r1) == 2);
+  roaring_bitmap_t *r2 = roaring_bitmap_add_offset(r1, -3);
+  roaring_bitmap_printf_describe(r2);
+  assert_true(roaring_bitmap_get_cardinality(r2) == 2);
+  roaring_bitmap_printf(r2);
+  roaring_bitmap_free(r1);
+  roaring_bitmap_free(r2);
+}
 
 DEFINE_TEST(issue429) {
   // This is a memory leak test, so we don't need to check the results.
@@ -4411,10 +4422,37 @@ DEFINE_TEST(test_portable_deserialize_frozen) {
     free(serialized);
 }
 
+DEFINE_TEST(convert_to_bitset) {
+    roaring_bitmap_t *r1 = roaring_bitmap_create();
+    for (uint32_t i = 100; i < 100000; i+= 1 + (i%5)) {
+     roaring_bitmap_add(r1, i);
+    }
+    for (uint32_t i = 100000; i < 500000; i+= 100) {
+     roaring_bitmap_add(r1, i);
+    }
+    roaring_bitmap_add_range(r1, 500000, 600000);
+    bitset_t * bitset = bitset_create();
+    bool success = roaring_bitmap_to_bitset(r1, bitset);
+    assert_true(success); // could fail due to memory allocation.
+    assert_true(bitset_count(bitset) == roaring_bitmap_get_cardinality(r1));
+    // You can then query the bitset:
+    for (uint32_t i = 100; i < 100000; i+= 1 + (i%5)) {
+        assert_true(bitset_get(bitset,i));
+    }
+    for (uint32_t i = 100000; i < 500000; i+= 100) {
+        assert_true(bitset_get(bitset,i));
+    }
+    // you must free the memory:
+    bitset_free(bitset);
+    roaring_bitmap_free(r1);
+}
+
 int main() {
     tellmeall();
 
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(issue457),
+        cmocka_unit_test(convert_to_bitset),
         cmocka_unit_test(issue440),
         cmocka_unit_test(issue436),
         cmocka_unit_test(issue433),
