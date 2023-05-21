@@ -17,10 +17,10 @@ if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_C_COMPILER_VERSION VERSIO
 endif()
 set(ROARING_LIB_NAME roaring)
 set(PROJECT_VERSION_MAJOR 1)
-set(PROJECT_VERSION_MINOR 1)
-set(PROJECT_VERSION_PATCH 2)
-set(ROARING_LIB_VERSION "1.1.2" CACHE STRING "Roaring library version")
-set(ROARING_LIB_SOVERSION "9" CACHE STRING "Roaring library soversion")
+set(PROJECT_VERSION_MINOR 2)
+set(PROJECT_VERSION_PATCH 0)
+set(ROARING_LIB_VERSION "1.2.0" CACHE STRING "Roaring library version")
+set(ROARING_LIB_SOVERSION "10" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
 if(NOT ROARING_EXCEPTIONS)
@@ -44,6 +44,8 @@ option(ROARING_BUILD_LTO "Build library with Link Time Optimization" OFF)
 option(ROARING_BUILD_C_AS_CPP "Build library C files using C++ compilation" OFF)
 option(ROARING_BUILD_C_TESTS_AS_CPP "Build test C files using C++ compilation" OFF)
 option(ROARING_SANITIZE "Sanitize addresses" OFF)
+option(ROARING_SANITIZE_THREADS "Sanitize threads" OFF)
+
 option(ENABLE_ROARING_TESTS "If OFF, disable unit tests altogether" ON)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake")
