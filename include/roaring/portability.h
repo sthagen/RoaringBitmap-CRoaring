@@ -107,7 +107,7 @@ extern "C" {  // portability definitions are in global scope, not a namespace
 
 
 
-#ifdef CROARING_CLANG_VISUAL_STUDIO
+#if CROARING_CLANG_VISUAL_STUDIO
 
 /**
  * You are not supposed, normally, to include these
@@ -132,6 +132,7 @@ extern "C" {  // portability definitions are in global scope, not a namespace
 #include <avxintrin.h>
 #include <avx2intrin.h>
 #include <wmmintrin.h>
+#if _MSC_VER >= 1920
 // Important: we need the AVX-512 headers:
 #include <avx512fintrin.h>
 #include <avx512dqintrin.h>
@@ -141,6 +142,7 @@ extern "C" {  // portability definitions are in global scope, not a namespace
 #include <avx512vbmiintrin.h>
 #include <avx512vbmi2intrin.h>
 #include <avx512vpopcntdqintrin.h>
+#endif // _MSC_VER >= 1920
 // unfortunately, we may not get _blsr_u64, but, thankfully, clang
 // has it as a macro.
 #ifndef _blsr_u64
@@ -338,8 +340,8 @@ static inline int roaring_hamming(uint64_t x) {
 #endif
 
 
-#define CROARING_TARGET_AVX2 CROARING_TARGET_REGION("avx2,bmi,pclmul,lzcnt")
-#define CROARING_TARGET_AVX512 CROARING_TARGET_REGION("bmi2,avx512f,avx512dq,avx512bw,avx512vbmi2,avx512bitalg,avx512vpopcntdq")
+#define CROARING_TARGET_AVX2 CROARING_TARGET_REGION("avx2,bmi,pclmul,lzcnt,popcnt")
+#define CROARING_TARGET_AVX512 CROARING_TARGET_REGION("avx2,bmi,bmi2,pclmul,lzcnt,popcnt,avx512f,avx512dq,avx512bw,avx512vbmi2,avx512bitalg,avx512vpopcntdq")
 #define CROARING_UNTARGET_AVX2 CROARING_UNTARGET_REGION
 #define CROARING_UNTARGET_AVX512 CROARING_UNTARGET_REGION
 
