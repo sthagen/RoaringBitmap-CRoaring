@@ -180,7 +180,7 @@ extern "C" {  // portability definitions are in global scope, not a namespace
 
 /* wrappers for Visual Studio built-ins that look like gcc built-ins __builtin_ctzll */
 /* result might be undefined when input_num is zero */
-static inline int roaring_trailing_zeroes(unsigned long long input_num) {
+inline int roaring_trailing_zeroes(unsigned long long input_num) {
     unsigned long index;
 #ifdef _WIN64  // highly recommended!!!
     _BitScanForward64(&index, input_num);
@@ -452,7 +452,7 @@ static inline bool croaring_refcount_dec(croaring_refcount_t *val) {
     return is_zero;
 }
 
-static inline uint32_t croaring_refcount_get(croaring_refcount_t *val) {
+static inline uint32_t croaring_refcount_get(const croaring_refcount_t *val) {
     return atomic_load_explicit(val, memory_order_relaxed);
 }
 #elif CROARING_ATOMIC_IMPL == CROARING_ATOMIC_IMPL_CPP
@@ -472,7 +472,7 @@ static inline bool croaring_refcount_dec(croaring_refcount_t *val) {
     return is_zero;
 }
 
-static inline uint32_t croaring_refcount_get(croaring_refcount_t *val) {
+static inline uint32_t croaring_refcount_get(const croaring_refcount_t *val) {
     return val->load(std::memory_order_relaxed);
 }
 #elif CROARING_ATOMIC_IMPL == CROARING_ATOMIC_IMPL_C_WINDOWS
@@ -492,7 +492,7 @@ static inline bool croaring_refcount_dec(croaring_refcount_t *val) {
     return _InterlockedDecrement(val) == 0;
 }
 
-static inline uint32_t croaring_refcount_get(croaring_refcount_t *val) {
+static inline uint32_t croaring_refcount_get(const croaring_refcount_t *val) {
     // Per https://learn.microsoft.com/en-us/windows/win32/sync/interlocked-variable-access
     // > Simple reads and writes to properly-aligned 32-bit variables are atomic
     // > operations. In other words, you will not end up with only one portion
@@ -513,7 +513,7 @@ static inline bool croaring_refcount_dec(croaring_refcount_t *val) {
     return val == 0;
 }
 
-static inline uint32_t croaring_refcount_get(croaring_refcount_t *val) {
+static inline uint32_t croaring_refcount_get(const croaring_refcount_t *val) {
     return *val;
 }
 #else
