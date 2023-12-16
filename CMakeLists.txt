@@ -16,10 +16,10 @@ if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_C_COMPILER_VERSION VERSIO
 endif()
 set(ROARING_LIB_NAME roaring)
 set(PROJECT_VERSION_MAJOR 2)
-set(PROJECT_VERSION_MINOR 0)
-set(PROJECT_VERSION_PATCH 4)
-set(ROARING_LIB_VERSION "2.0.4" CACHE STRING "Roaring library version")
-set(ROARING_LIB_SOVERSION "13" CACHE STRING "Roaring library soversion")
+set(PROJECT_VERSION_MINOR 1)
+set(PROJECT_VERSION_PATCH 0)
+set(ROARING_LIB_VERSION "2.1.0" CACHE STRING "Roaring library version")
+set(ROARING_LIB_SOVERSION "14" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
 if(NOT ROARING_EXCEPTIONS)
@@ -45,14 +45,17 @@ option(ROARING_BUILD_C_TESTS_AS_CPP "Build test C files using C++ compilation" O
 option(ROARING_SANITIZE "Sanitize addresses" OFF)
 option(ROARING_SANITIZE_THREADS "Sanitize threads" OFF)
 
-option(ENABLE_ROARING_TESTS "If OFF, disable unit tests altogether" ${BUILD_TESTING})
+option(ENABLE_ROARING_TESTS "If OFF, disable unit tests altogether" ON)
+if(NOT ENABLE_ROARING_TESTS)
+  message(STATUS "Tests are disabled, you can enabled them by setting ENABLE_ROARING_TESTS to ON")
+endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake")
 
+include(cmake/CPM.cmake)
 find_package(CTargets)
 find_package(Options)
 find_package(LTO)
-include(cmake/CPM.cmake)
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/roaring.pc.in"
                "${CMAKE_CURRENT_BINARY_DIR}/roaring.pc" @ONLY)
