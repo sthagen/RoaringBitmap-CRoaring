@@ -1,8 +1,8 @@
 #include <assert.h>
 #include <roaring/art/art.h>
 #include <roaring/containers/containers.h>
-#include <roaring/roaring64.h>
 #include <roaring/portability.h>
+#include <roaring/roaring64.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
@@ -247,8 +247,9 @@ void roaring64_bitmap_add_bulk(roaring64_bitmap_t *r,
     } else {
         // We're not positioned anywhere yet or the high bits of the key
         // differ.
+        leaf_t *leaf = (leaf_t *)art_find(&r->art, high48);
         context->leaf =
-            containerptr_roaring64_bitmap_add(r, high48, low16, NULL);
+            containerptr_roaring64_bitmap_add(r, high48, low16, leaf);
         memcpy(context->high_bytes, high48, ART_KEY_BYTES);
     }
 }
@@ -272,7 +273,7 @@ static inline void add_range_closed_at(art_t *art, uint8_t *high48,
     if (leaf != NULL) {
         uint8_t typecode2;
         container_t *container2 = container_add_range(
-            leaf->container, leaf->typecode, min, max + 1, &typecode2);
+            leaf->container, leaf->typecode, min, max, &typecode2);
         if (container2 != leaf->container) {
             container_free(leaf->container, leaf->typecode);
             leaf->container = container2;
@@ -281,6 +282,8 @@ static inline void add_range_closed_at(art_t *art, uint8_t *high48,
         return;
     }
     uint8_t typecode;
+    // container_add_range is inclusive, but `container_range_of_ones` is
+    // exclusive.
     container_t *container = container_range_of_ones(min, max + 1, &typecode);
     leaf = create_leaf(container, typecode);
     art_insert(art, high48, (art_val_t *)leaf);
@@ -531,19 +534,17 @@ static inline void remove_range_closed_at(art_t *art, uint8_t *high48,
         return;
     }
     uint8_t typecode2;
-    // container_add_range is exclusive but container_remove_range is
-    // inclusive...
     container_t *container2 = container_remove_range(
         leaf->container, leaf->typecode, min, max, &typecode2);
     if (container2 != leaf->container) {
         container_free(leaf->container, leaf->typecode);
-        leaf->container = container2;
-        leaf->typecode = typecode2;
-    }
-    if (!container_nonzero_cardinality(container2, typecode2)) {
-        art_erase(art, high48);
-        container_free(container2, typecode2);
-        free_leaf(leaf);
+        if (container2 != NULL) {
+            leaf->container = container2;
+            leaf->typecode = typecode2;
+        } else {
+            art_erase(art, high48);
+            free_leaf(leaf);
+        }
     }
 }
 
@@ -1281,13 +1282,18 @@ void roaring64_bitmap_andnot_inplace(roaring64_bitmap_t *r1,
                     container2 = container_andnot(
                         leaf1->container, leaf1->typecode, leaf2->container,
                         leaf2->typecode, &typecode2);
+                    if (container2 != container1) {
+                        // We only free when doing container_andnot, not
+                        // container_iandnot, as iandnot frees the original
+                        // internally.
+                        container_free(container1, typecode1);
+                    }
                 } else {
                     container2 = container_iandnot(
                         leaf1->container, leaf1->typecode, leaf2->container,
                         leaf2->typecode, &typecode2);
                 }
                 if (container2 != container1) {
-                    container_free(container1, typecode1);
                     leaf1->container = container2;
                     leaf1->typecode = typecode2;
                 }
