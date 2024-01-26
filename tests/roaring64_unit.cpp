@@ -12,6 +12,17 @@ using namespace roaring::api;
 
 namespace {
 
+void assert_vector_equal(const std::vector<uint64_t>& lhs,
+                         const std::vector<uint64_t>& rhs) {
+    assert_int_equal(lhs.size(), rhs.size());
+    for (size_t i = 0; i < lhs.size(); ++i) {
+        if (lhs[i] != rhs[i]) {
+            printf("Mismatch at %zu\n", i);
+            assert_int_equal(lhs[i], rhs[i]);
+        }
+    }
+}
+
 DEFINE_TEST(test_copy) {
     roaring64_bitmap_t* r1 = roaring64_bitmap_create();
 
@@ -277,6 +288,7 @@ DEFINE_TEST(test_contains_range) {
         assert_true(roaring64_bitmap_contains_range(r, 1, (1 << 16) + 10));
         assert_true(roaring64_bitmap_contains_range(r, 1, (1 << 16) - 1));
         assert_false(roaring64_bitmap_contains_range(r, 1, (1 << 16) + 11));
+        assert_false(roaring64_bitmap_contains_range(r, 0, (1 << 16) + 10));
         roaring64_bitmap_free(r);
     }
     {
@@ -300,6 +312,21 @@ DEFINE_TEST(test_contains_range) {
         roaring64_bitmap_t* r = roaring64_bitmap_create();
         roaring64_bitmap_add_range(r, 1, 1 << 16);
         assert_false(roaring64_bitmap_contains_range(r, 1, (1 << 16)));
+        roaring64_bitmap_free(r);
+    }
+    {
+        // Range entirely before the bitmap.
+        roaring64_bitmap_t* r = roaring64_bitmap_create();
+        roaring64_bitmap_add(r, 1 << 16);
+        assert_false(roaring64_bitmap_contains_range(r, 1, 10));
+        roaring64_bitmap_free(r);
+    }
+    {
+        // Range entirely after the bitmap.
+        roaring64_bitmap_t* r = roaring64_bitmap_create();
+        roaring64_bitmap_add(r, 1 << 16);
+        assert_false(
+            roaring64_bitmap_contains_range(r, 2 << 16, (2 << 16) + 1));
         roaring64_bitmap_free(r);
     }
 }
@@ -1058,8 +1085,8 @@ DEFINE_TEST(test_flip) {
     }
     {
         // A bitmap with values in all affected containers.
-        roaring64_bitmap_t* r1 = roaring64_bitmap_from(
-            (2 << 16), (3 << 16) + 1, (4 << 16) + 3);
+        roaring64_bitmap_t* r1 =
+            roaring64_bitmap_from((2 << 16), (3 << 16) + 1, (4 << 16) + 3);
         roaring64_bitmap_t* r2 =
             roaring64_bitmap_flip(r1, (2 << 16), (4 << 16) + 4);
         roaring64_bitmap_t* r3 =
@@ -1104,8 +1131,8 @@ DEFINE_TEST(test_flip_inplace) {
     }
     {
         // A bitmap with values in all affected containers.
-        roaring64_bitmap_t* r1 = roaring64_bitmap_from(
-            (2 << 16), (3 << 16) + 1, (4 << 16) + 3);
+        roaring64_bitmap_t* r1 =
+            roaring64_bitmap_from((2 << 16), (3 << 16) + 1, (4 << 16) + 3);
         roaring64_bitmap_flip_inplace(r1, (2 << 16), (4 << 16) + 4);
         roaring64_bitmap_t* r2 =
             roaring64_bitmap_from_range((2 << 16) + 1, (4 << 16) + 3, 1);
@@ -1115,6 +1142,37 @@ DEFINE_TEST(test_flip_inplace) {
         roaring64_bitmap_free(r1);
         roaring64_bitmap_free(r2);
     }
+}
+
+void check_portable_serialization(const roaring64_bitmap_t* r1) {
+    size_t serialized_size = roaring64_bitmap_portable_size_in_bytes(r1);
+    std::vector<char> buf(serialized_size, 0);
+    size_t serialized = roaring64_bitmap_portable_serialize(r1, buf.data());
+    assert_int_equal(serialized, serialized_size);
+    size_t deserialized_size =
+        roaring64_bitmap_portable_deserialize_size(buf.data(), SIZE_MAX);
+    assert_int_equal(deserialized_size, serialized_size);
+    roaring64_bitmap_t* r2 =
+        roaring64_bitmap_portable_deserialize_safe(buf.data(), serialized_size);
+    assert_true(roaring64_bitmap_equals(r2, r1));
+    roaring64_bitmap_free(r2);
+}
+
+DEFINE_TEST(test_portable_serialize) {
+    roaring64_bitmap_t* r = roaring64_bitmap_create();
+
+    check_portable_serialization(r);
+
+    roaring64_bitmap_add(r, 0);
+    roaring64_bitmap_add(r, 1);
+    roaring64_bitmap_add(r, 1ULL << 16);
+    roaring64_bitmap_add(r, 1ULL << 32);
+    roaring64_bitmap_add(r, 1ULL << 48);
+    roaring64_bitmap_add(r, 1ULL << 60);
+    roaring64_bitmap_add(r, UINT64_MAX);
+    check_portable_serialization(r);
+
+    roaring64_bitmap_free(r);
 }
 
 bool roaring_iterator64_sumall(uint64_t value, void* param) {
@@ -1135,6 +1193,21 @@ DEFINE_TEST(test_iterate) {
     assert_true(roaring64_bitmap_iterate(r, roaring_iterator64_sumall, &sum));
     assert_int_equal(sum, ((1ULL << 35) + (1ULL << 35) + 1 + (1ULL << 35) + 2 +
                            (1ULL << 36)));
+
+    roaring64_bitmap_free(r);
+}
+
+DEFINE_TEST(test_to_uint64_array) {
+    roaring64_bitmap_t* r = roaring64_bitmap_create();
+    std::vector<uint64_t> a1 = {0, 1ULL << 35, (1Ull << 35) + 1,
+                                (1Ull << 35) + 2, 1Ull << 36};
+    for (uint64_t val : a1) {
+        roaring64_bitmap_add(r, val);
+    }
+
+    std::vector<uint64_t> a2(a1.size(), 0);
+    roaring64_bitmap_to_uint64_array(r, a2.data());
+    assert_vector_equal(a2, a1);
 
     roaring64_bitmap_free(r);
 }
@@ -1392,17 +1465,38 @@ DEFINE_TEST(test_iterator_read) {
         roaring64_bitmap_add_bulk(r, &context, v);
     }
 
-    // Check that a zero count results in zero elements read.
-    roaring64_iterator_t* it = roaring64_iterator_create(r);
-    uint64_t buf[1];
-    assert_int_equal(roaring64_iterator_read(it, buf, 0), 0);
-    roaring64_iterator_free(it);
+    {
+        // Check that a zero count results in zero elements read.
+        roaring64_iterator_t* it = roaring64_iterator_create(r);
+        uint64_t buf[1];
+        assert_int_equal(roaring64_iterator_read(it, buf, 0), 0);
+        roaring64_iterator_free(it);
+    }
 
     readCompare(values, r, 1);
     readCompare(values, r, 2);
     readCompare(values, r, values.size() - 1);
     readCompare(values, r, values.size());
     readCompare(values, r, values.size() + 1);
+
+    {
+        // A count of UINT64_MAX.
+        roaring64_iterator_t* it = roaring64_iterator_create(r);
+        std::vector<uint64_t> buf(values.size(), 0);
+        assert_int_equal(roaring64_iterator_read(it, buf.data(), UINT64_MAX),
+                         1000);
+        assert_vector_equal(buf, values);
+        roaring64_iterator_free(it);
+    }
+    {
+        // A count that becomes zero if cast to uint32.
+        roaring64_iterator_t* it = roaring64_iterator_create(r);
+        std::vector<uint64_t> buf(values.size(), 0);
+        assert_int_equal(
+            roaring64_iterator_read(it, buf.data(), 0xFFFFFFFF00000000), 1000);
+        assert_vector_equal(buf, values);
+        roaring64_iterator_free(it);
+    }
 
     roaring64_bitmap_free(r);
 }
@@ -1455,7 +1549,9 @@ int main() {
         cmocka_unit_test(test_andnot_inplace),
         cmocka_unit_test(test_flip),
         cmocka_unit_test(test_flip_inplace),
+        cmocka_unit_test(test_portable_serialize),
         cmocka_unit_test(test_iterate),
+        cmocka_unit_test(test_to_uint64_array),
         cmocka_unit_test(test_iterator_create),
         cmocka_unit_test(test_iterator_create_last),
         cmocka_unit_test(test_iterator_reinit),

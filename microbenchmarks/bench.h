@@ -26,7 +26,11 @@
 #error "CROARING_COMPILER_SUPPORTS_AVX512 needs to be defined."
 #endif  // CROARING_COMPILER_SUPPORTS_AVX512
 #endif
-
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 using roaring::Roaring64Map;
 
 event_collector collector;
@@ -37,6 +41,7 @@ roaring_bitmap_t **bitmaps = NULL;
 roaring64_bitmap_t **bitmaps64 = NULL;
 Roaring64Map **bitmaps64cpp = NULL;
 uint32_t *array_buffer;
+uint64_t *array_buffer64;
 uint32_t maxvalue = 0;
 uint32_t maxcard = 0;
 
@@ -194,6 +199,7 @@ static roaring_bitmap_t **create_all_bitmaps(size_t *howmany,
         roaring_bitmap_set_copy_on_write(answer[i], copy_on_write);
     }
     array_buffer = (uint32_t *)malloc(maxcard * sizeof(uint32_t));
+    array_buffer64 = (uint64_t *)malloc(maxcard * sizeof(uint64_t));
     return answer;
 }
 
@@ -305,5 +311,7 @@ int load(const char *dirname) {
     if (bitmaps == NULL) return -1;
     return count;
 }
-
+#endif
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
 #endif
