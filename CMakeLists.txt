@@ -20,8 +20,8 @@ endif()
 set(ROARING_LIB_NAME roaring)
 set(PROJECT_VERSION_MAJOR 4)
 set(PROJECT_VERSION_MINOR 3)
-set(PROJECT_VERSION_PATCH 3)
-set(ROARING_LIB_VERSION "4.3.3" CACHE STRING "Roaring library version")
+set(PROJECT_VERSION_PATCH 5)
+set(ROARING_LIB_VERSION "4.3.5" CACHE STRING "Roaring library version")
 set(ROARING_LIB_SOVERSION "18" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
@@ -108,7 +108,7 @@ configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/tests/config.h.in"
 #################################
 
 add_subdirectory(src)
-if(ENABLE_ROARING_TESTS)
+if(ENABLE_ROARING_TESTS AND NOT EMSCRIPTEN)
   if(CMAKE_SIZEOF_VOID_P EQUAL 8) # we only include the benchmarks on 64-bit systems.
     add_subdirectory(benchmarks)
   endif()
@@ -116,7 +116,7 @@ if(ENABLE_ROARING_TESTS)
 endif()
 find_program(BASH bash)
 
-if(ENABLE_ROARING_TESTS AND BASH)
+if(ENABLE_ROARING_TESTS AND BASH AND NOT EMSCRIPTEN)
   message(STATUS "Amalgamation tests enabled")
   set(CROARING_SINGLEHEADER_FILES
     ${CMAKE_CURRENT_BINARY_DIR}/amalgamation_demo.c
