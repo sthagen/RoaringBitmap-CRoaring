@@ -59,8 +59,9 @@ if(ROARING_DISABLE_NEON)
   target_compile_definitions(roaring PUBLIC DISABLENEON=1)
 endif(ROARING_DISABLE_NEON)
 
-target_link_libraries(roaring PUBLIC roaring-headers)
-target_link_libraries(roaring PUBLIC roaring-headers-cpp)
+target_link_libraries(roaring PUBLIC "$<BUILD_INTERFACE:roaring-headers>")
+target_link_libraries(roaring PUBLIC "$<BUILD_INTERFACE:roaring-headers-cpp>")
+
 #
 #install(TARGETS roaring DESTINATION lib)
 #
@@ -90,7 +91,7 @@ foreach(tree_type BUILD INSTALL)
     "${build_location}/roaring-config-version.cmake"
     VERSION ${ROARING_LIB_VERSION}
     COMPATIBILITY SameMajorVersion)
-  configure_package_config_file("${CMAKE_SOURCE_DIR}/cmake/config.cmake.in"
+  configure_package_config_file("${PROJECT_SOURCE_DIR}/cmake/config.cmake.in"
                                 "${build_location}/roaring-config.cmake"
                                 INSTALL_DESTINATION "${install_location}")
 
