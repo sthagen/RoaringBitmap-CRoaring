@@ -1174,7 +1174,15 @@ https://groups.google.com/forum/#!forum/roaring-bitmaps
 
 # Contributing
 
-When contributing a change to the project, please run `tools/run-clangcldocker.sh` after making any changes. A github action runs on all PRs to ensure formatting is consistent with this.
+When contributing a change to the project, please run `tools/run-clangcldocker.sh` after making any changes if you have docker and bash. A github action runs on all PRs to ensure formatting is consistent with this.
+
+If you are using AI, please review our [AI usage policy](AI_USAGE_POLICY.md).
+
+For large PRs, prefer smaller incremental PRs or request staged review.
+
+Contributions are licensed under the project’s license. Ensure your work complies and does not infringe on third-party rights.
+
+A compiler or static-analyzer warning is not a bug. Do not report such cases as bugs. We do accept pull requests if you want to silence warnings issued by code analyzers, however.
 
 # Stars
 
