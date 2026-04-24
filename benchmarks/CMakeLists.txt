@@ -1,21 +1,26 @@
-set (BENCHMARK_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/realdata/") # does this ever get used?
+# Unified benchmark: one binary, --filter selects a subset of registered cases.
+# Uses lemire/counters (https://github.com/lemire/counters) for hardware
+# performance counters (cycles, instructions, branches, branch misses,
+# cache misses).
+if(ROARING_USE_CPM AND NOT WIN32)
+  CPMAddPackage(
+    NAME counters
+    GIT_REPOSITORY https://github.com/lemire/counters.git
+    GIT_TAG v4.1.0
+    OPTIONS
+      "COUNTERS_INSTALL OFF"
+      "COUNTERS_BUILD_TESTS OFF"
+  )
 
-add_c_benchmark(create_benchmark)
-add_c_benchmark(adversarialunions_benchmark)
-# We exclude POSIX tests from Visual Studio default build
-if(NOT WIN32)
-    add_c_benchmark(real_bitmaps_benchmark)
-    add_c_benchmark(real_bitmaps_contains_benchmark)
-    add_c_benchmark(iteration_benchmark)
-    add_c_benchmark(add_benchmark)
-    target_link_libraries(add_benchmark m)
-    add_c_benchmark(intersect_range_benchmark)
-    add_c_benchmark(frozen_benchmark)
-    add_c_benchmark(containsmulti_benchmark)
-    add_cpp_benchmark(fastunion_benchmark)
-    add_cpp_benchmark(sparse_cases_benchmark)
+  # Copy the real-bitmap datasets into the build directory so the unified
+  # benchmark auto-loads them by default. file(COPY) is configure-time and
+  # skip-if-unchanged (preserves timestamps), so reconfigure is cheap.
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/realdata"
+       DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+  set(BENCHMARK_DATA_DIR "${CMAKE_CURRENT_BINARY_DIR}/realdata")
+
+  add_executable(benchmark benchmark.cpp)
+  target_link_libraries(benchmark PRIVATE roaring counters::counters)
+  target_compile_definitions(benchmark PRIVATE
+    BENCHMARK_DATA_DIR="${BENCHMARK_DATA_DIR}")
 endif()
-add_c_benchmark(bitset_container_benchmark)
-add_c_benchmark(array_container_benchmark)
-add_c_benchmark(run_container_benchmark)
-add_c_benchmark(equals_benchmark)

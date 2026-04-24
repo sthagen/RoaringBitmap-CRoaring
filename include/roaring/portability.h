@@ -1,6 +1,15 @@
 /*
  * portability.h
  *
+ * This header centralizes compiler-, platform-, and architecture-specific
+ * portability definitions used throughout CRoaring. It provides feature
+ * detection, calling-convention and attribute macros, intrinsic and inline
+ * assembly enablement, endianness helpers, alignment annotations, atomic
+ * reference-count support, and other low-level compatibility glue.
+ *
+ * The goal is to keep these conditional definitions in one place so the rest
+ * of the codebase can rely on a more uniform interface across GCC, Clang,
+ * MSVC, x86/x64, ARM/NEON, and other supported environments.
  */
 
 /**

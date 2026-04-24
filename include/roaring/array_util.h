@@ -1,3 +1,15 @@
+/*
+ * array_util.h
+ *
+ * This header provides low-level utility routines for sorted arrays of
+ * 16-bit integers, which are used heavily by CRoaring's array-based
+ * containers and set-operation kernels. It includes search helpers, counting
+ * helpers, and array intersection/difference primitives.
+ *
+ * Some of the routines also have SIMD-accelerated implementations on supported
+ * platforms, allowing efficient operations on sorted integer arrays that form
+ * the basis of sparse container processing.
+ */
 #ifndef CROARING_ARRAY_UTIL_H
 #define CROARING_ARRAY_UTIL_H
 

@@ -1,5 +1,14 @@
 /*
  * configreport.h
+ *
+ * This header provides lightweight helpers to report basic build and runtime
+ * configuration information, such as processor family, compiler identity,
+ * optimization status, endianness, and selected hardware characteristics.
+ *
+ * It is mainly intended for diagnostics, benchmarking output, and quick
+ * inspection of the environment in which CRoaring or code using CRoaring was
+ * compiled and is being executed.
+ *
  * If this gets compiled into a different execution unit than the CRoaring
  * library, the functions croaring_hardware_support() & ROARING_SUPPORTS_AVX512
  * and croaring_hardware_support() & ROARING_SUPPORTS_AVX2 *may* trigger an
@@ -17,7 +26,7 @@
 extern "C" {
 namespace roaring {
 namespace misc {
-#endif
+#endif /* __cplusplus */
 
 #if CROARING_IS_X64
 // useful for basic info (0)
@@ -32,7 +41,7 @@ static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
     (void)ebx;
     (void)ecx;
     (void)edx;
-#endif /* not sure what to do when inline assembly is unavailable*/
+#endif /* CROARING_INLINE_ASM */
 }
 
 // CPUID instruction takes no parameters as CPUID implicitly uses the EAX
@@ -53,7 +62,7 @@ static inline void cpuinfo(int code, int *eax, int *ebx, int *ecx, int *edx) {
     (void)ebx;
     (void)ecx;
     (void)edx;
-#endif /* not sure what to do when inline assembly is unavailable*/
+#endif /* CROARING_INLINE_ASM */
 }
 
 static inline int computecacheline() {
@@ -180,72 +189,105 @@ static inline const char *guessprocessor() {
 
 static inline void tellmeall() {
 #if CROARING_IS_BIG_ENDIAN
-    printf("big-endian system detected\n"));
-#endif
-    printf("x64 processor:  %s\t", guessprocessor());
-#ifdef __VERSION__
-    printf(" compiler version: %s\t", __VERSION__);
-#endif
+    printf("# big-endian system detected\n");
+#endif /* CROARING_IS_BIG_ENDIAN */
+    printf("# x64 processor: %s\n", guessprocessor());
+#if defined(__clang__)
+    printf("# compiler: clang %d.%d.%d\n", __clang_major__, __clang_minor__,
+           __clang_patchlevel__);
+#elif defined(__GNUC__)
+    printf(" compiler: gcc %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
+           __GNUC_PATCHLEVEL__);
+#elif defined(_MSC_VER)
+    printf("# compiler: MSVC %d\n", _MSC_VER);
+#elif defined(__VERSION__)
+    printf("# compiler: %s\n", __VERSION__);
+#else
+    printf("# compiler: unknown\n");
+#endif /* compiler detection */
 
-#ifdef __AVX2__
-    printf(" Building for AVX2\t");
-#endif
+#if defined(__OPTIMIZE__)
+    printf("# optimization: on\n");
+#elif defined(__OPTIMIZE_SIZE__)
+    printf("# size optimization: on\n");
+#elif defined(_MSC_VER) && !defined(_DEBUG)
+    printf("# optimization: on\n");
+#else
+    printf("# optimization: off\n");
+#endif /* optimization detection */
 
-    printf("\n");
     if ((sizeof(int) != 4) || (sizeof(long) != 8)) {
         printf("number of bytes: int = %lu long = %lu \n",
                (long unsigned int)sizeof(size_t),
                (long unsigned int)sizeof(int));
     }
-#if __LITTLE_ENDIAN__
-// This is what we expect!
-// printf("you have little endian machine");
-#endif
 #if __BIG_ENDIAN__
-    printf("you have a big endian machine");
-#endif
+    printf("# you have a big endian machine\n");
+#endif /* __BIG_ENDIAN__ */
 #if __CHAR_BIT__
-    if (__CHAR_BIT__ != 8) printf("on your machine, chars don't have 8bits???");
-#endif
+    if (__CHAR_BIT__ != 8)
+        printf("# on your machine, chars don't have 8bits???\n");
+#endif /* __CHAR_BIT__ */
     if (computecacheline() != 64)
-        printf("cache line: %d bytes\n", computecacheline());
+        printf("# cache line: %d bytes\n", computecacheline());
 }
 #else
 
 static inline void tellmeall() {
 #if CROARING_IS_BIG_ENDIAN
-    printf("big-endian system detected\n");
-#endif
-    printf("Non-X64  processor\n");
-#ifdef __arm__
-    printf("ARM processor detected\n");
-#endif
-#ifdef __VERSION__
-    printf(" compiler version: %s\t", __VERSION__);
-#endif
+    printf("# big-endian system detected\n");
+#endif /* CROARING_IS_BIG_ENDIAN */
+#if defined(__x86_64__) || defined(_M_X64) || defined(__amd64__)
+    printf("# x64 processor detected\n");
+#elif defined(__arm__) || defined(__aarch64__) || defined(__arm64__) || \
+    defined(_M_ARM) || defined(_M_ARM64)
+    printf("# ARM processor detected\n");
+#else
+    printf("# Non-X64, non-ARM processor\n");
+#endif /* architecture detection */
+#if defined(__clang__)
+    printf("# compiler: clang %d.%d.%d\n", __clang_major__, __clang_minor__,
+           __clang_patchlevel__);
+#elif defined(__GNUC__)
+    printf(" compiler: gcc %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
+           __GNUC_PATCHLEVEL__);
+#elif defined(_MSC_VER)
+    printf("# compiler: MSVC %d\n", _MSC_VER);
+#elif defined(__VERSION__)
+    printf("# compiler: %s\n", __VERSION__);
+#else
+    printf("# compiler: unknown\n");
+#endif /* compiler detection */
+
+#if defined(__OPTIMIZE__)
+    printf("# optimization: on\n");
+#elif defined(__OPTIMIZE_SIZE__)
+    printf("# size optimization: on\n");
+#elif defined(_MSC_VER) && !defined(_DEBUG)
+    printf("# optimization: on\n");
+#else
+    printf("# optimization: off\n");
+#endif /* optimization detection */
     if ((sizeof(int) != 4) || (sizeof(long) != 8)) {
         printf("number of bytes: int = %lu long = %lu \n",
                (long unsigned int)sizeof(size_t),
                (long unsigned int)sizeof(int));
     }
-#if __LITTLE_ENDIAN__
-// This is what we expect!
-// printf("you have little endian machine");
-#endif
 #if __BIG_ENDIAN__
-    printf("you have a big endian machine");
-#endif
+    printf("# you have a big endian machine\n");
+#endif /* __BIG_ENDIAN__ */
 #if __CHAR_BIT__
-    if (__CHAR_BIT__ != 8) printf("on your machine, chars don't have 8bits???");
-#endif
+    if (__CHAR_BIT__ != 8)
+        printf("# on your machine, chars don't have 8bits???\n");
+#endif /* __CHAR_BIT__ */
 }
 
-#endif
+#endif /* CROARING_IS_X64 */
 
 #ifdef __cplusplus
 }
 }
 }  // extern "C" { namespace roaring { namespace misc {
-#endif
+#endif /* __cplusplus */
 
 #endif /* CROARING_INCLUDE_MISC_CONFIGREPORT_H_ */

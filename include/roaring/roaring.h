@@ -1,5 +1,16 @@
 /*
  * An implementation of Roaring Bitmaps in C.
+ *
+ * This is the main public header for the 32-bit CRoaring API. A Roaring bitmap
+ * represents a set of unsigned 32-bit integers by partitioning the value space
+ * into 16-bit chunks and storing each chunk in a container chosen to match the
+ * local data density. Sparse chunks are typically kept as sorted arrays,
+ * denser chunks as bitsets, and long consecutive runs as run containers.
+ *
+ * This hybrid representation aims to keep bitmaps compact while still
+ * supporting fast membership tests, iteration, rank/select queries,
+ * serialization, and set operations such as union, intersection, difference,
+ * and symmetric difference.
  */
 
 #ifndef ROARING_H
@@ -680,7 +691,16 @@ size_t roaring_bitmap_size_in_bytes(const roaring_bitmap_t *r);
  *
  * This function is unsafe in the sense that if there is no valid serialized
  * bitmap at the pointer, then many bytes could be read, possibly causing a
- * buffer overflow.  See also roaring_bitmap_portable_deserialize_safe().
+ * buffer overflow. In other words, this routine assumes that `buf` points to a
+ * complete, correctly formatted serialized bitmap and does not take a buffer
+ * length argument that would let it enforce a read bound.
+ *
+ * Use this function only when the input buffer is already trusted, for example
+ * because it comes from memory that was previously filled by
+ * `roaring_bitmap_portable_serialize()` and whose size is known by some other
+ * means. If the source is untrusted, truncated, or otherwise not guaranteed to
+ * contain a valid serialized bitmap, prefer
+ * `roaring_bitmap_portable_deserialize_safe()`.
  *
  * This is meant to be compatible with the Java and Go versions:
  * https://github.com/RoaringBitmap/RoaringFormatSpec

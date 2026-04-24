@@ -1,6 +1,14 @@
 /*
  * array.h
  *
+ * Array containers store a sparse set of 16-bit integers as a sorted dynamic
+ * array. The cardinality field tracks how many values are present, capacity
+ * tracks the allocated length, and array points to the sorted values.
+ *
+ * This representation is used for low-cardinality containers because it is
+ * compact and supports fast iteration and binary-search-based membership
+ * tests. When the number of stored values grows beyond DEFAULT_MAX_SIZE,
+ * CRoaring will typically switch to a denser container representation.
  */
 
 #ifndef INCLUDE_CONTAINERS_ARRAY_H_
@@ -338,6 +346,10 @@ inline bool array_container_contains(const array_container_t *arr,
     int32_t low = 0;
     const uint16_t *carr = (const uint16_t *)arr->array;
     int32_t high = arr->cardinality - 1;
+    if (high > pos) {
+        // since elements are unique, x can be located only at index <= x
+        high = pos;
+    }
     //    while (high - low >= 0) {
     while (high >= low + 16) {
         int32_t middleIndex = (low + high) >> 1;
@@ -351,12 +363,19 @@ inline bool array_container_contains(const array_container_t *arr,
         }
     }
 
+    while (high >= low + 3) {
+        if (carr[low + 3] >= pos) {
+            return (carr[low] == pos) || (carr[low + 1] == pos) ||
+                   (carr[low + 2] == pos) || (carr[low + 3] == pos);
+        }
+        low += 4;
+    }
+
     for (int i = low; i <= high; i++) {
         uint16_t v = carr[i];
-        if (v == pos) {
-            return true;
+        if (v >= pos) {
+            return (v == pos);  // compiles into SETE
         }
-        if (v > pos) return false;
     }
     return false;
 }

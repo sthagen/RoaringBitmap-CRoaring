@@ -1,3 +1,15 @@
+/*
+ * containers.h
+ *
+ * This header is the central internal interface for Roaring container
+ * operations. It ties together the concrete container types (array, bitset,
+ * run, and shared containers), their type codes, common helper functions, and
+ * the mixed-operation headers used to combine different representations.
+ *
+ * In practice, it acts as the dispatch layer that lets higher-level bitmap
+ * code manipulate containers through a uniform interface while still selecting
+ * type-specific implementations when needed.
+ */
 #ifndef CONTAINERS_CONTAINERS_H
 #define CONTAINERS_CONTAINERS_H
 

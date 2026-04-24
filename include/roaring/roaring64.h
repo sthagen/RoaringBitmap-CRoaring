@@ -1,3 +1,12 @@
+/*
+ * roaring64.h
+ *
+ * This file declares the 64-bit Roaring bitmap API. A roaring64 bitmap stores
+ * sets of 64-bit unsigned integers by partitioning the value space by high
+ * bits and using Roaring containers for the lower bits inside each partition.
+ * This keeps the structure compact while preserving fast membership tests,
+ * insertions, iteration, and set operations over large sparse integer sets.
+ */
 #ifndef ROARING64_H
 #define ROARING64_H
 
