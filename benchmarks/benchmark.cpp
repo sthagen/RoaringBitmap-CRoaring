@@ -520,95 +520,6 @@ void register_array_container(std::vector<Entry> &out) {
         out.push_back(std::move(e));
     }
 
-    // Fix: the old benchmark never populated its query array, so contains was
-    // effectively called with zero for every query (likely constant-folded).
-    {
-        struct S {
-            array_container_t *B;
-            std::vector<uint16_t> queries;
-        };
-        constexpr size_t kQueries = 1024;
-        auto setup = []() -> void * {
-            auto *s = new S;
-            s->B = array_container_create();
-            populate_array_stride(s->B, kArrayStride);
-            s->queries.resize(kQueries);
-            for (size_t i = 0; i < kQueries; ++i) {
-                s->queries[i] = static_cast<uint16_t>(pcg32_random());
-            }
-            return s;
-        };
-        auto teardown = [](void *sv) {
-            auto *s = static_cast<S *>(sv);
-            array_container_free(s->B);
-            delete s;
-        };
-
-        {
-            Entry e;
-            e.name = "array_container/contains_random_prefetch";
-            e.description =
-                "Runs 1024 membership queries at uniformly random 16-bit "
-                "values against a populated array_container_t. Before "
-                "every probe, the container's value array is fully "
-                "prefetched (via __builtin_prefetch on every cache line), "
-                "modelling the hot-cache regime where the container has "
-                "just been touched and every lookup hits L1. This fixes "
-                "the old benchmark, whose query array was never populated, "
-                "so every probe really asked contains(0).";
-            e.setup = setup;
-            e.run = [](void *sv) -> int64_t {
-                auto *s = static_cast<S *>(sv);
-                int64_t hits = 0;
-                for (uint16_t q : s->queries) {
-#if !CROARING_REGULAR_VISUAL_STUDIO
-                    for (int32_t k = 0; k < s->B->cardinality;
-                         k += 64 / (int32_t)sizeof(uint16_t)) {
-                        __builtin_prefetch(s->B->array + k);
-                    }
-#endif
-                    hits += array_container_contains(s->B, q);
-                }
-                return hits;
-            };
-            e.teardown = teardown;
-            e.ops_per_run = static_cast<int64_t>(kQueries);
-            out.push_back(std::move(e));
-        }
-        {
-            Entry e;
-            e.name = "array_container/contains_random_flush";
-            e.description =
-                "Runs 1024 membership queries at uniformly random 16-bit "
-                "values against a populated array_container_t. Before "
-                "every probe, the container's value array is evicted from "
-                "cache by issuing clflush on every cache line (x86 only; "
-                "a no-op on other architectures), modelling the cold-cache "
-                "regime where each lookup pays the full memory latency. "
-                "Like the prefetch variant, this fixes the old benchmark "
-                "whose query array was never populated.";
-            e.setup = setup;
-            e.run = [](void *sv) -> int64_t {
-                auto *s = static_cast<S *>(sv);
-                int64_t hits = 0;
-                for (uint16_t q : s->queries) {
-#if defined(CROARING_IS_X64) && !(defined(_MSC_VER) && !defined(__clang__))
-                    for (int32_t k = 0; k < s->B->cardinality;
-                         k += 64 / (int32_t)sizeof(uint16_t)) {
-                        __builtin_ia32_clflush(s->B->array + k);
-                    }
-#endif
-                    hits += array_container_contains(s->B, q);
-                }
-                return hits;
-            };
-            e.teardown = teardown;
-            e.ops_per_run = static_cast<int64_t>(kQueries);
-            e.inner_reps = 20;
-            out.push_back(std::move(e));
-        }
-    }
-
     // Union / intersection across two densities. Two pair flavors:
     //   stride3_stride5 — dense containers, large output.
     //   stride16_pow2   — sparse containers, tiny output (bounds-stress).
@@ -712,6 +623,71 @@ void register_array_container(std::vector<Entry> &out) {
         "sparse with a tiny output, exercising the short-input code paths "
         "and boundary handling.",
         16, 0, true);
+
+    {
+        struct ManyState {
+            std::vector<array_container_t *> arrays;
+        };
+        constexpr int kManyArrays = 2000;
+        constexpr int kManyRounds = 1000;
+        constexpr uint64_t kManySeed = 0xC0FFEEULL;
+
+        Entry e;
+        e.name = "array_container/random_fill_drain";
+        e.description =
+            "Fills 2000 array_container_t objects (initially empty) with "
+            "random 16-bit values, then drains them back to empty. The "
+            "outer loop runs 1000 rounds: in each round, one pcg-seeded "
+            "mt19937 draw is appended to every array, so the workload "
+            "interleaves inserts across all 2000 containers (each touch "
+            "lands at a random position, exercising the binary-search + "
+            "shift hot path of array_container_add). After 1000 rounds "
+            "every array holds ~1000 distinct values (a handful of "
+            "duplicates are swallowed by add). The RNG is then re-seeded "
+            "with the same seed and the exact same sequence is replayed "
+            "through array_container_remove, so by the end of run() every "
+            "container is back to cardinality 0. Reported ops_per_run "
+            "counts every add and remove call (2 * 2000 * 1000).";
+        e.setup = []() -> void * {
+            auto *s = new ManyState;
+            s->arrays.reserve(kManyArrays);
+            for (int i = 0; i < kManyArrays; ++i) {
+                s->arrays.push_back(array_container_create());
+            }
+            return s;
+        };
+        e.run = [](void *sv) -> int64_t {
+            auto *s = static_cast<ManyState *>(sv);
+            std::mt19937 rng(kManySeed);
+            for (int round = 0; round < kManyRounds; ++round) {
+                for (array_container_t *arr : s->arrays) {
+                    array_container_add(arr, static_cast<uint16_t>(rng()));
+                }
+            }
+            rng.seed(kManySeed);
+            for (int round = 0; round < kManyRounds; ++round) {
+                for (array_container_t *arr : s->arrays) {
+                    array_container_remove(arr, static_cast<uint16_t>(rng()));
+                }
+            }
+            int64_t total = 0;
+            for (array_container_t *arr : s->arrays) {
+                total += array_container_cardinality(arr);
+            }
+            return total;
+        };
+        e.teardown = [](void *sv) {
+            auto *s = static_cast<ManyState *>(sv);
+            for (array_container_t *arr : s->arrays) {
+                array_container_free(arr);
+            }
+            delete s;
+        };
+        e.ops_per_run = static_cast<int64_t>(kManyArrays) * kManyRounds * 2;
+        e.expected = 0;
+        e.check_expected = true;
+        out.push_back(std::move(e));
+    }
 }
 
 // --------------------------------------------- bitset_container benches
@@ -4075,11 +4051,167 @@ static void register_ser_deser(std::vector<Entry> &out) {
     }
 }
 
+// ====== ContainsCold / ContainsWarm at three densities ===============
+//
+// 10,000 bitmaps over the universe [0, 2^18). Each bitmap is built by
+// splitting the universe into 4 blocks of 2^16, drawing the per-block
+// cardinality from a Poisson distribution with mean = density * 2^16,
+// then placing the values uniformly within each block.
+//
+// Cold: walk all 10,000 bitmaps, one random probe each (each new bitmap
+// evicts the previous from cache).
+// Warm: probe the first 10 bitmaps 1000 random times each (bitmap stays
+// resident). Same total probe count as cold, so per-query times are
+// directly comparable.
+namespace density_contains {
+
+constexpr size_t kSyntheticCount = 10000;
+constexpr uint32_t kSyntheticUniverse = 1u << 18;
+constexpr uint32_t kSyntheticBlockSize = 1u << 16;
+constexpr uint32_t kSyntheticBlockCount =
+    kSyntheticUniverse / kSyntheticBlockSize;
+constexpr size_t kWarmRepeats = 1000;
+constexpr size_t kWarmBitmaps = kSyntheticCount / kWarmRepeats;
+
+struct Data {
+    std::vector<roaring_bitmap_t *> low;
+    std::vector<roaring_bitmap_t *> mod;
+    std::vector<roaring_bitmap_t *> high;
+    std::vector<uint32_t> cold_queries;
+    std::vector<uint32_t> warm_queries;
+};
+
+static std::vector<roaring_bitmap_t *> build_bitmaps(double density,
+                                                     uint64_t seed) {
+    std::mt19937_64 rng(seed);
+    std::poisson_distribution<int> poisson(density * kSyntheticBlockSize);
+    std::uniform_int_distribution<uint32_t> within_block(
+        0, kSyntheticBlockSize - 1);
+    std::vector<roaring_bitmap_t *> out(kSyntheticCount);
+    for (size_t i = 0; i < kSyntheticCount; ++i) {
+        out[i] = roaring_bitmap_create();
+        for (uint32_t b = 0; b < kSyntheticBlockCount; ++b) {
+            int n = poisson(rng);
+            if (n < 0) n = 0;
+            if (n > (int)kSyntheticBlockSize) n = (int)kSyntheticBlockSize;
+            uint32_t base = b * kSyntheticBlockSize;
+            for (int k = 0; k < n; ++k) {
+                roaring_bitmap_add(out[i], base + within_block(rng));
+            }
+        }
+        roaring_bitmap_run_optimize(out[i]);
+        roaring_bitmap_shrink_to_fit(out[i]);
+    }
+    return out;
+}
+
+// Single shared dataset used by all six entries; built lazily on first
+// setup() call. Leaked at process exit.
+static Data *get_data() {
+    static Data *d = nullptr;
+    if (d != nullptr) return d;
+    d = new Data;
+    d->low = build_bitmaps(0.001, 0xC0FFEE0001ULL);
+    d->mod = build_bitmaps(0.01, 0xC0FFEE0002ULL);
+    d->high = build_bitmaps(0.1, 0xC0FFEE0003ULL);
+    std::mt19937_64 rng(0xDEADBEEFULL);
+    std::uniform_int_distribution<uint32_t> dist(0, kSyntheticUniverse - 1);
+    d->cold_queries.resize(kSyntheticCount);
+    for (size_t i = 0; i < kSyntheticCount; ++i) d->cold_queries[i] = dist(rng);
+    d->warm_queries.resize(kWarmRepeats);
+    for (size_t i = 0; i < kWarmRepeats; ++i) d->warm_queries[i] = dist(rng);
+    return d;
+}
+
+using Pick = const std::vector<roaring_bitmap_t *> &(*)(Data *);
+static const std::vector<roaring_bitmap_t *> &pick_low(Data *d) {
+    return d->low;
+}
+static const std::vector<roaring_bitmap_t *> &pick_mod(Data *d) {
+    return d->mod;
+}
+static const std::vector<roaring_bitmap_t *> &pick_high(Data *d) {
+    return d->high;
+}
+
+static void add_cold(std::vector<Entry> &out, const char *name,
+                     const char *density_label, Pick pick) {
+    Entry e;
+    e.name = name;
+    e.description =
+        std::string("10,000 bitmaps over [0, 2^18) at ") + density_label +
+        " density (per-block cardinality drawn from Poisson(density*2^16), "
+        "values placed uniformly within each 2^16 block). Cold variant: "
+        "issues one uniformly-random membership query against each of the "
+        "10,000 bitmaps in turn, so every probe touches a fresh bitmap and "
+        "the previous one is evicted from cache before its next access. "
+        "Reported cost is per query.";
+    e.setup = []() -> void * { return get_data(); };
+    e.run = [pick](void *sv) -> int64_t {
+        auto *d = static_cast<Data *>(sv);
+        const auto &bms = pick(d);
+        int64_t marker = 0;
+        for (size_t i = 0; i < kSyntheticCount; ++i) {
+            marker += roaring_bitmap_contains(bms[i], d->cold_queries[i]);
+        }
+        return marker;
+    };
+    e.teardown = nullptr;
+    e.ops_per_run = static_cast<int64_t>(kSyntheticCount);
+    e.inner_reps = 1;
+    e.reusable_state = true;
+    out.push_back(std::move(e));
+}
+
+static void add_warm(std::vector<Entry> &out, const char *name,
+                     const char *density_label, Pick pick) {
+    Entry e;
+    e.name = name;
+    e.description =
+        std::string("10,000 bitmaps over [0, 2^18) at ") + density_label +
+        " density (per-block cardinality drawn from Poisson(density*2^16), "
+        "values placed uniformly within each 2^16 block). Warm variant: "
+        "probes the first 10 bitmaps 1,000 random times each, so every "
+        "bitmap is fully cache-resident for all but the first probe. The "
+        "total probe count (10,000) matches the cold variant, so per-query "
+        "times are directly comparable.";
+    e.setup = []() -> void * { return get_data(); };
+    e.run = [pick](void *sv) -> int64_t {
+        auto *d = static_cast<Data *>(sv);
+        const auto &bms = pick(d);
+        int64_t marker = 0;
+        for (size_t i = 0; i < kWarmBitmaps; ++i) {
+            roaring_bitmap_t *b = bms[i];
+            for (size_t r = 0; r < kWarmRepeats; ++r) {
+                marker += roaring_bitmap_contains(b, d->warm_queries[r]);
+            }
+        }
+        return marker;
+    };
+    e.teardown = nullptr;
+    e.ops_per_run = static_cast<int64_t>(kWarmBitmaps * kWarmRepeats);
+    e.inner_reps = 1;
+    e.reusable_state = true;
+    out.push_back(std::move(e));
+}
+
+static void register_benchmarks(std::vector<Entry> &out) {
+    add_cold(out, "synthetic/ContainsColdLow", "low (0.001)", pick_low);
+    add_cold(out, "synthetic/ContainsColdMod", "moderate (0.01)", pick_mod);
+    add_cold(out, "synthetic/ContainsColdHigh", "high (0.1)", pick_high);
+    add_warm(out, "synthetic/ContainsWarmLow", "low (0.001)", pick_low);
+    add_warm(out, "synthetic/ContainsWarmMod", "moderate (0.01)", pick_mod);
+    add_warm(out, "synthetic/ContainsWarmHigh", "high (0.1)", pick_high);
+}
+
+}  // namespace density_contains
+
 static void register_all(std::vector<Entry> &out) {
     register_contains_variants(out);
     register_random_variants(out);
     register_insert_remove(out);
     register_ser_deser(out);
+    density_contains::register_benchmarks(out);
 }
 
 }  // namespace synthetic
