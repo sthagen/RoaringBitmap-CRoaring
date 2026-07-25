@@ -22,11 +22,11 @@ if(CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_C_COMPILER_VERSION VERSIO
     message(FATAL_ERROR "${PROJECT_NAME} requires at least apple-clang version 11 to support runtime dispatching.")
 endif()
 set(ROARING_LIB_NAME roaring)
-set(PROJECT_VERSION_MAJOR 4)
-set(PROJECT_VERSION_MINOR 7)
-set(PROJECT_VERSION_PATCH 2)
-set(ROARING_LIB_VERSION "4.7.2" CACHE STRING "Roaring library version")
-set(ROARING_LIB_SOVERSION "22" CACHE STRING "Roaring library soversion")
+set(PROJECT_VERSION_MAJOR 5)
+set(PROJECT_VERSION_MINOR 0)
+set(PROJECT_VERSION_PATCH 0)
+set(ROARING_LIB_VERSION "5.0.0" CACHE STRING "Roaring library version")
+set(ROARING_LIB_SOVERSION "24" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
 if(NOT ROARING_EXCEPTIONS)
@@ -52,6 +52,7 @@ option(ROARING_BUILD_C_TESTS_AS_CPP "Build test C files using C++ compilation" O
 option(ROARING_SANITIZE "Sanitize addresses" OFF)
 option(ROARING_SANITIZE_THREADS "Sanitize threads" OFF)
 option(ROARING_SANITIZE_UNDEFINED "Sanitize undefined behaviors" OFF)
+option(ROARING_SANITIZE_MEMORY "Sanitize memory (MemorySanitizer)" OFF)
 option(ROARING_UNSAFE_FROZEN_TESTS "If ON, tests some frozen functions which are unsafe as they include unaligned reads, this can cause crashes" OFF)
 
 option(ENABLE_ROARING_TESTS "If OFF, disable unit tests altogether" ON)
@@ -90,6 +91,7 @@ target_include_directories(roaring-headers-cpp INTERFACE
 ### Some users want the C++ header files to be installed as well.
 ### C++ header files get installed to /usr/local/include/roaring typically
 SET(CPP_ROARING_HEADERS
+   cpp/roaring/roaring64.hh
    cpp/roaring/roaring64map.hh
    cpp/roaring/roaring.hh) # needs to be updated if we add more files
 install(FILES ${CPP_ROARING_HEADERS} DESTINATION include/roaring)
