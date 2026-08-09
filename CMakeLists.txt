@@ -26,7 +26,7 @@ set(PROJECT_VERSION_MAJOR 5)
 set(PROJECT_VERSION_MINOR 0)
 set(PROJECT_VERSION_PATCH 0)
 set(ROARING_LIB_VERSION "5.0.0" CACHE STRING "Roaring library version")
-set(ROARING_LIB_SOVERSION "24" CACHE STRING "Roaring library soversion")
+set(ROARING_LIB_SOVERSION "26" CACHE STRING "Roaring library soversion")
 
 option(ROARING_EXCEPTIONS "Enable exception-throwing interface" ON)
 if(NOT ROARING_EXCEPTIONS)
