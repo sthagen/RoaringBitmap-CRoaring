@@ -944,6 +944,52 @@ DEFINE_TEST(test_get_cardinality) {
         assert_int_equal(roaring64_bitmap_get_cardinality(r), 7);
         roaring64_bitmap_free(r);
     }
+    {
+        // Deletes leave NULL holes in containers[]; cardinality must skip
+        // them rather than treating first_free as a dense end.
+        roaring64_bitmap_t* r = roaring64_bitmap_create();
+        const int n = 64;
+        for (int i = 0; i < n; ++i) {
+            roaring64_bitmap_add(r, ((uint64_t)i << 16) | 1);
+        }
+        assert_int_equal(roaring64_bitmap_get_cardinality(r), n);
+        assert_r64_valid(r);
+
+        for (int i = 0; i < n; i += 2) {
+            roaring64_bitmap_remove(r, ((uint64_t)i << 16) | 1);
+        }
+        assert_int_equal(roaring64_bitmap_get_cardinality(r), n / 2);
+        assert_r64_valid(r);
+
+        for (int i = n; i < n + 16; ++i) {
+            roaring64_bitmap_add(r, ((uint64_t)i << 16) | 1);
+        }
+        assert_int_equal(roaring64_bitmap_get_cardinality(r), n / 2 + 16);
+        assert_r64_valid(r);
+
+        roaring64_bitmap_t* r2 = roaring64_bitmap_create();
+        roaring64_bitmap_add(r2, (1ULL << 16) | 1);
+        assert_int_equal(roaring64_bitmap_or_cardinality(r, r2), n / 2 + 16);
+        assert_int_equal(roaring64_bitmap_andnot_cardinality(r, r2),
+                         n / 2 + 15);
+
+        roaring64_bitmap_shrink_to_fit(r);
+        assert_int_equal(roaring64_bitmap_get_cardinality(r), n / 2 + 16);
+        assert_r64_valid(r);
+
+        roaring64_bitmap_free(r2);
+        roaring64_bitmap_free(r);
+    }
+    {
+        // Array -> bitset conversion must keep typecodes[] in sync.
+        roaring64_bitmap_t* r = roaring64_bitmap_create();
+        for (uint32_t i = 0; i < 4097; ++i) {
+            roaring64_bitmap_add(r, i);
+        }
+        assert_int_equal(roaring64_bitmap_get_cardinality(r), 4097);
+        assert_r64_valid(r);
+        roaring64_bitmap_free(r);
+    }
 }
 
 DEFINE_TEST(test_range_cardinality) {
@@ -1973,6 +2019,19 @@ void check_portable_serialization(const roaring64_bitmap_t* r1) {
     assert_r64_valid(r2);
     assert_true(roaring64_bitmap_equals(r2, r1));
     roaring64_bitmap_free(r2);
+
+    roaring64_bitmap_t* r3 = roaring64_bitmap_portable_deserialize_frozen(
+        buf.data(), serialized_size);
+#if CROARING_IS_BIG_ENDIAN
+    // No in-place view of a little-endian format on a big-endian host.
+    assert_null(r3);
+#else
+    assert_r64_valid(r3);
+    assert_true(roaring64_bitmap_equals(r3, r1));
+    roaring64_bitmap_free(r3);
+    assert_null(roaring64_bitmap_portable_deserialize_frozen(
+        buf.data(), serialized_size > 0 ? serialized_size - 1 : 0));
+#endif
 }
 
 DEFINE_TEST(test_portable_serialize) {
@@ -1990,6 +2049,13 @@ DEFINE_TEST(test_portable_serialize) {
     check_portable_serialization(r);
 
     roaring64_bitmap_add_range(r, 1ULL << 16, 1ULL << 32);
+    check_portable_serialization(r);
+
+    // Dense bitset container (cardinality > DEFAULT_MAX_SIZE).
+    roaring64_bitmap_add_range(r, 0, 5000);
+    check_portable_serialization(r);
+
+    roaring64_bitmap_run_optimize(r);
     check_portable_serialization(r);
 
     roaring64_bitmap_free(r);
@@ -2245,6 +2311,70 @@ DEFINE_TEST(test_iterator_advance) {
 
     // Check that we can't move forward again.
     assert_false(roaring64_iterator_advance(it));
+
+    roaring64_iterator_free(it);
+    roaring64_bitmap_free(r);
+}
+
+DEFINE_TEST(test_iterator_fast_path) {
+    // Exercises the bitset fast path in roaring64_iterator_advance, and the
+    // paths that must invalidate it. Mixed container kinds so the cache is
+    // built, skipped and rebuilt as the iterator crosses leaves.
+    roaring64_bitmap_t* r = roaring64_bitmap_create();
+    // Dense enough to become a bitset in one high48.
+    for (uint32_t i = 0; i < 4097; ++i) {
+        roaring64_bitmap_add(r, i);
+    }
+    // Sparse array container in another high48.
+    for (uint32_t i = 0; i < 10; ++i) {
+        roaring64_bitmap_add(r, (1ULL << 32) + i * 100);
+    }
+    // A long run in a third high48.
+    roaring64_bitmap_add_range_closed(r, 1ULL << 48, (1ULL << 48) + 10000);
+    roaring64_bitmap_run_optimize(r);
+
+    uint64_t card = roaring64_bitmap_get_cardinality(r);
+    std::vector<uint64_t> expected(card);
+    roaring64_bitmap_to_uint64_array(r, expected.data());
+
+    roaring64_iterator_t* it = roaring64_iterator_create(r);
+    size_t i = 0;
+    while (roaring64_iterator_has_value(it)) {
+        assert_int_equal(roaring64_iterator_value(it), expected[i]);
+        i++;
+        roaring64_iterator_advance(it);
+    }
+    assert_int_equal(i, expected.size());
+
+    // previous() after a long forward walk must still be correct.
+    roaring64_iterator_reinit(r, it);
+    for (size_t k = 0; k < 5000; ++k) {
+        assert_true(roaring64_iterator_advance(it));
+    }
+    assert_int_equal(roaring64_iterator_value(it), expected[5000]);
+    assert_true(roaring64_iterator_previous(it));
+    assert_int_equal(roaring64_iterator_value(it), expected[4999]);
+    assert_true(roaring64_iterator_advance(it));
+    assert_int_equal(roaring64_iterator_value(it), expected[5000]);
+
+    // read() moves container_it without going through advance(); a later
+    // advance() must not reuse the cache built before it.
+    roaring64_iterator_reinit(r, it);
+    std::vector<uint64_t> buf(100);
+    uint64_t n = roaring64_iterator_read(it, buf.data(), 100);
+    assert_int_equal(n, 100);
+    assert_true(roaring64_iterator_has_value(it));
+    assert_int_equal(roaring64_iterator_value(it), expected[100]);
+    assert_true(roaring64_iterator_advance(it));
+    assert_int_equal(roaring64_iterator_value(it), expected[101]);
+
+    // move_equalorlarger() likewise.
+    roaring64_iterator_reinit(r, it);
+    assert_true(roaring64_iterator_advance(it));
+    assert_true(roaring64_iterator_move_equalorlarger(it, expected[2000]));
+    assert_int_equal(roaring64_iterator_value(it), expected[2000]);
+    assert_true(roaring64_iterator_advance(it));
+    assert_int_equal(roaring64_iterator_value(it), expected[2001]);
 
     roaring64_iterator_free(it);
     roaring64_bitmap_free(r);
@@ -2950,6 +3080,7 @@ int main() {
         cmocka_unit_test(test_iterator_reinit_last),
         cmocka_unit_test(test_iterator_copy),
         cmocka_unit_test(test_iterator_advance),
+        cmocka_unit_test(test_iterator_fast_path),
         cmocka_unit_test(test_iterator_previous),
         cmocka_unit_test(test_iterator_move_equalorlarger),
         cmocka_unit_test(test_iterator_read),
